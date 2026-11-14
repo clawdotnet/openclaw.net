@@ -2,6 +2,7 @@
   <PropertyGroup>
     <RootNamespace>OpenClaw.Payments.Core</RootNamespace>
     <IsAotCompatible>true</IsAotCompatible>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsPackable>true</IsPackable>
     <PackageId>OpenClaw.Payments.Core</PackageId>
     <Description>Native payment runtime, vault, policy, redaction, sentinel, and mock provider for OpenClaw.NET.</Description>

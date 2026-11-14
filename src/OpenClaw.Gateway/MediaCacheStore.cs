@@ -21,7 +21,7 @@ internal sealed class MediaCacheStore
     {
         var id = $"media_{Guid.NewGuid():N}"[..22];
         var extension = GuessExtension(mediaType, fileName);
-        var assetPath = Path.Combine(_rootPath, id + extension);
+        var assetPath = Path.Join(_rootPath, id + ".payload" + extension);
         await File.WriteAllBytesAsync(assetPath, data.ToArray(), ct);
 
         var asset = new StoredMediaAsset
@@ -34,19 +34,44 @@ internal sealed class MediaCacheStore
             CreatedAtUtc = DateTimeOffset.UtcNow
         };
 
-        var metadataPath = Path.Combine(_rootPath, id + ".json");
+        var metadataPath = Path.Join(_rootPath, id + ".json");
         await File.WriteAllTextAsync(metadataPath, JsonSerializer.Serialize(asset, CoreJsonContext.Default.StoredMediaAsset), ct);
         return asset;
     }
 
     public async Task<StoredMediaAsset?> GetAsync(string id, CancellationToken ct)
     {
-        var metadataPath = Path.Combine(_rootPath, id + ".json");
+        var metadataPath = Path.Join(_rootPath, id + ".json");
         if (!File.Exists(metadataPath))
             return null;
 
         var json = await File.ReadAllTextAsync(metadataPath, ct);
-        return JsonSerializer.Deserialize(json, CoreJsonContext.Default.StoredMediaAsset);
+        var asset = JsonSerializer.Deserialize(json, CoreJsonContext.Default.StoredMediaAsset);
+        // Legacy JSON uploads overwrote their payload with the metadata file.
+        return asset is not null && !IsMetadataPayloadCollision(asset.Path, metadataPath)
+            ? asset
+            : null;
+    }
+
+    private static bool IsMetadataPayloadCollision(string assetPath, string metadataPath)
+    {
+        if (string.Equals(assetPath, metadataPath, StringComparison.Ordinal))
+            return true;
+        if (!string.Equals(assetPath, metadataPath, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        // A case-sensitive volume can contain both legacy `asset.JSON` payload and
+        // `asset.json` metadata entries. A case-insensitive volume exposes only one
+        // directory entry, even though both spellings can be opened successfully.
+        var directory = Path.GetDirectoryName(metadataPath)!;
+        var hasAssetEntry = false;
+        var hasMetadataEntry = false;
+        foreach (var entry in Directory.EnumerateFiles(directory, "*", SearchOption.TopDirectoryOnly))
+        {
+            hasAssetEntry |= string.Equals(entry, assetPath, StringComparison.Ordinal);
+            hasMetadataEntry |= string.Equals(entry, metadataPath, StringComparison.Ordinal);
+        }
+        return !hasAssetEntry || !hasMetadataEntry;
     }
 
     private static string GuessExtension(string mediaType, string fileName)

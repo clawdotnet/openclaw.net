@@ -40,15 +40,11 @@ internal static class DigitalEmployeeEndpoints
         // Config files (AGENTS.md etc.) take effect on the next agent restart.
         app.MapPost("/admin/digital-employee/upload", async (HttpContext ctx) =>
         {
-            var auth = EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: true);
-            if (!auth.IsAuthorized)
-                return Results.Unauthorized();
-
-            if (!EndpointHelpers.TryConsumeOperatorRateLimit(ctx, operations, auth, "admin.control", out var blockedByPolicyId))
-                return Results.Json(
-                    new DigitalEmployeeUploadResponse { Success = false, Error = $"Rate limit exceeded by policy '{blockedByPolicyId}'." },
-                    CoreJsonContext.Default.DigitalEmployeeUploadResponse,
-                    statusCode: StatusCodes.Status429TooManyRequests);
+            var access = EndpointHelpers.AuthorizeOperatorEndpoint(ctx, startup, browserSessions, operations,
+                requireCsrf: true, endpointScope: "admin.workspace.install", rateLimitScope: "admin.control");
+            if (access.Failure is not null)
+                return access.Failure;
+            var auth = access.Authorization!;
 
             var workspacePath = startup.WorkspacePath
                 ?? OpenClaw.Core.Security.SecretResolver.Resolve(startup.Config.Tooling.WorkspaceRoot);
@@ -58,13 +54,14 @@ internal static class DigitalEmployeeEndpoints
                     CoreJsonContext.Default.DigitalEmployeeUploadResponse,
                     statusCode: StatusCodes.Status501NotImplemented);
 
-            if (!ctx.Request.HasFormContentType || ctx.Request.Form.Files.Count == 0)
+            var files = ctx.Request.HasFormContentType ? (await ctx.Request.ReadFormAsync(ctx.RequestAborted)).Files : null;
+            if (files is null || files.Count == 0)
                 return Results.Json(
                     new DigitalEmployeeUploadResponse { Success = false, Error = "No file uploaded. Send multipart/form-data with a zip file." },
                     CoreJsonContext.Default.DigitalEmployeeUploadResponse,
                     statusCode: StatusCodes.Status400BadRequest);
 
-            var upload = ctx.Request.Form.Files[0];
+            var upload = files[0];
             if (upload.Length > MaxUploadBytes)
                 return Results.Json(
                     new DigitalEmployeeUploadResponse { Success = false, Error = $"ZIP file too large (max {MaxUploadBytes / 1024 / 1024} MB)." },
@@ -93,6 +90,12 @@ internal static class DigitalEmployeeEndpoints
             try
             {
                 using var zip = new ZipArchive(new MemoryStream(zipBytes), ZipArchiveMode.Read);
+
+                if (zip.Entries.Sum(entry => (decimal)entry.Length) > MaxUploadBytes)
+                    return Results.Json(
+                        new DigitalEmployeeUploadResponse { Success = false, Error = "Expanded archive exceeds upload limit." },
+                        CoreJsonContext.Default.DigitalEmployeeUploadResponse,
+                        statusCode: StatusCodes.Status400BadRequest);
 
                 // Detect optional single top-level wrapper directory.
                 var topComponents = zip.Entries
@@ -139,22 +142,39 @@ internal static class DigitalEmployeeEndpoints
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
-            // ── Phase 2: ZIP-slip validation ──────────────────────────────────────────────────────
+            // ── Phase 2: ZIP-slip validation and bounded extraction ──────────────────────────────
             var workspaceRoot = Path.GetFullPath(workspacePath);
+            var mappedFiles = new List<(string Destination, byte[] Contents)>();
             try
             {
                 using var zip = new ZipArchive(new MemoryStream(zipBytes), ZipArchiveMode.Read);
-                foreach (var (_, destRel) in GetMappedFileEntries(zip, zipPrefix))
+                long actualExpandedBytes = 0;
+                var buffer = new byte[81920];
+                foreach (var (entry, destRel) in GetMappedFileEntries(zip, zipPrefix))
                 {
-                    var destFull = Path.GetFullPath(Path.Combine(workspaceRoot, destRel));
-                    // Resolve any existing symlinks/junctions on the path and validate
-                    // containment on the real filesystem path to prevent symlink escapes.
-                    var realDestFull = WorkspacePathHelpers.ResolveRealPath(destFull);
-                    if (!WorkspacePathHelpers.IsInsideDirectory(realDestFull, workspaceRoot))
+                    var destFull = Path.GetFullPath(Path.Join(workspaceRoot, destRel));
+                    if (!WorkspacePathHelpers.IsSafeWorkspacePath(destFull, workspaceRoot))
                         return Results.Json(
                             new DigitalEmployeeUploadResponse { Success = false, Error = "ZIP contains a path traversal entry and was rejected." },
                             CoreJsonContext.Default.DigitalEmployeeUploadResponse,
                             statusCode: StatusCodes.Status400BadRequest);
+
+                    await using var entryStream = entry.Open();
+                    await using var contents = new MemoryStream((int)Math.Min(entry.Length, MaxUploadBytes));
+                    while (true)
+                    {
+                        var read = await entryStream.ReadAsync(buffer, ctx.RequestAborted);
+                        if (read == 0)
+                            break;
+                        if (actualExpandedBytes + read > MaxUploadBytes)
+                            return Results.Json(
+                                new DigitalEmployeeUploadResponse { Success = false, Error = "Expanded archive exceeds upload limit." },
+                                CoreJsonContext.Default.DigitalEmployeeUploadResponse,
+                                statusCode: StatusCodes.Status400BadRequest);
+                        actualExpandedBytes += read;
+                        await contents.WriteAsync(buffer.AsMemory(0, read), ctx.RequestAborted);
+                    }
+                    mappedFiles.Add((destRel, contents.ToArray()));
                 }
             }
             catch (InvalidDataException)
@@ -170,23 +190,17 @@ internal static class DigitalEmployeeEndpoints
             var skillDirNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             try
             {
-                using var zip = new ZipArchive(new MemoryStream(zipBytes), ZipArchiveMode.Read);
-                foreach (var (entry, destRel) in GetMappedFileEntries(zip, zipPrefix))
+                foreach (var (destRel, contents) in mappedFiles)
                 {
-                    var destFull = Path.GetFullPath(Path.Combine(workspaceRoot, destRel));
-                    Directory.CreateDirectory(Path.GetDirectoryName(destFull)!);
-
-                    // Re-resolve after the directory exists so newly visible symlinks
-                    // are caught, then re-validate containment before writing.
-                    var realDestFull = WorkspacePathHelpers.ResolveRealPath(destFull);
-                    if (!WorkspacePathHelpers.IsInsideDirectory(realDestFull, workspaceRoot))
+                    var destFull = Path.GetFullPath(Path.Join(workspaceRoot, destRel));
+                    // Recheck at extraction time before creating any directories.
+                    if (!WorkspacePathHelpers.IsSafeWorkspacePath(destFull, workspaceRoot))
                         continue; // symlink/junction escape — skip silently
 
-                    using var entryStream = entry.Open();
-                    using var fs = new FileStream(realDestFull, FileMode.Create, FileAccess.Write, FileShare.None, 4096, useAsync: true);
-                    await entryStream.CopyToAsync(fs, ctx.RequestAborted);
+                    await using var fs = SecureFileSystem.OpenForWriteUnderRoot(workspaceRoot, destFull, 4096);
+                    await fs.WriteAsync(contents, ctx.RequestAborted);
 
-                    var relNorm = Path.GetRelativePath(workspaceRoot, realDestFull).Replace('\\', '/');
+                    var relNorm = Path.GetRelativePath(workspaceRoot, destFull).Replace('\\', '/');
                     installedFiles.Add(relNorm);
 
                     // Track skill directory names for hot-reload.

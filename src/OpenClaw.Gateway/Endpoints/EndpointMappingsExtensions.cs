@@ -10,7 +10,7 @@ internal static class EndpointMappingsExtensions
         GatewayStartupContext startup,
         GatewayAppRuntime runtime)
     {
-        app.MapOpenClawMediaEndpoints(startup);
+        app.MapOpenClawMediaEndpoints(startup, runtime);
         app.MapOpenClawAppsEndpoints(startup, runtime);
         app.MapOpenClawAppsMcpProxy(startup);
         app.MapOpenClawDiagnosticsEndpoints(startup, runtime);

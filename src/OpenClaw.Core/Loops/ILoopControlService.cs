@@ -2,7 +2,7 @@ namespace OpenClaw.Core.Loops;
 
 /// <summary>
 /// Receives termination signals from the LoopControlTool or LoopTerminationDetector.
-/// Implemented by ClawLoopScheduler to bridge tool/detector with TickerQ cancellation.
+/// Implemented by ClawLoopScheduler to bridge tool/detector with loop cancellation.
 /// </summary>
 public interface ILoopControlService
 {

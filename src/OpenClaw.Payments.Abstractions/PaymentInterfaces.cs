@@ -24,6 +24,12 @@ public interface IPaymentProvider
         CancellationToken ct);
 }
 
+/// <summary>Optional provider validation that is guaranteed not to dispatch funds.</summary>
+public interface IPaymentProviderPreflight
+{
+    void ValidateMachinePayment(MachinePaymentRequest request, PaymentExecutionContext context);
+}
+
 public interface IPaymentApprovalService
 {
     ValueTask<ApprovalResult> RequestApprovalAsync(ApprovalRequest request, CancellationToken ct);

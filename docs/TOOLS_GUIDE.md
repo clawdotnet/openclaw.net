@@ -186,6 +186,7 @@ Spawns a “sub-agent” for multi-agent delegation (only present when `OpenClaw
 Gateway-registered first-party payment tool over the native payment runtime. Disabled by default via `OpenClaw:Payments:Enabled=false`.
 - Actions: `setup_status`, `list_funding_sources`, `issue_virtual_card`, `execute_machine_payment`, `get_payment_status`.
 - Safety: money-moving actions are approval-gated by policy; tool results include safe metadata only.
+- Machine payments require a stable `idempotency_key`. Reuse it for retries, and reconcile uncertain provider outcomes before trying a different key.
 - Docs: [plugins/payment.md](plugins/payment.md) and [security/payments.md](security/payments.md).
 
 ### 7b. Canvas and A2UI Tools (`canvas_present`, `canvas_hide`, `canvas_navigate`, `canvas_snapshot`, `a2ui_push`, `a2ui_reset`, `a2ui_eval`, `a2ui_create_surface`, `a2ui_update_components`, `a2ui_update_data_model`, `a2ui_delete_surface`, `a2ui_sync_ui_to_data`)

@@ -187,7 +187,7 @@ public sealed class SqliteMemoryStore : IMemoryStore, ISessionSnapshotSource, IM
         }
         catch (Exception ex)
         {
-            _logger?.LogError(ex, "Persisted sqlite session row for {SessionId} is corrupt or unreadable", sessionId);
+            _logger?.LogError(ex, "A persisted sqlite session row is corrupt or unreadable; consult the returned corruption error for recovery details");
             throw new MemoryStoreCorruptionException(
                 $"Session '{sessionId}' could not be loaded because its persisted sqlite state is corrupt.",
                 sessionId,

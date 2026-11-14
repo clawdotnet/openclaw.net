@@ -5072,13 +5072,13 @@
 
             approvalsOutput.innerHTML = data.items.map(item => `
                 <div class="card" style="margin-bottom:0.75rem;">
-                    <strong>${item.toolName}</strong>
-                    <div class="muted">${item.channelId}:${item.senderId}</div>
-                    <div class="muted">${item.sessionId}</div>
-                    <pre>${item.arguments}</pre>
+                    <strong>${escapeHtml(item.toolName)}</strong>
+                    <div class="muted">${escapeHtml(item.channelId)}:${escapeHtml(item.senderId)}</div>
+                    <div class="muted">${escapeHtml(item.sessionId)}</div>
+                    <pre>${escapeHtml(item.arguments)}</pre>
                     <div class="actions">
-                        <button data-approval="${item.approvalId}" data-approved="true">Approve</button>
-                        <button class="secondary" data-approval="${item.approvalId}" data-approved="false">Deny</button>
+                        <button data-approval="${escapeHtml(item.approvalId)}" data-approved="true">Approve</button>
+                        <button class="secondary" data-approval="${escapeHtml(item.approvalId)}" data-approved="false">Deny</button>
                     </div>
                 </div>
             `).join('');
@@ -5098,10 +5098,10 @@
 
             approvalsHistoryOutput.innerHTML = data.items.map(item => `
                 <div class="card" style="margin-top:0.75rem;">
-                    <strong>${item.eventType === 'decision' ? (item.approved ? 'Approved' : 'Denied') : 'Created'} · ${item.toolName}</strong>
-                    <div class="muted">${item.channelId}:${item.senderId} · ${item.approvalId}</div>
-                    <div class="muted">${item.decisionSource || 'pending'} · ${item.decisionAtUtc || item.timestampUtc}</div>
-                    <pre>${item.argumentsPreview}</pre>
+                    <strong>${item.eventType === 'decision' ? (item.approved ? 'Approved' : 'Denied') : 'Created'} · ${escapeHtml(item.toolName)}</strong>
+                    <div class="muted">${escapeHtml(item.channelId)}:${escapeHtml(item.senderId)} · ${escapeHtml(item.approvalId)}</div>
+                    <div class="muted">${escapeHtml(item.decisionSource || 'pending')} · ${escapeHtml(item.decisionAtUtc || item.timestampUtc)}</div>
+                    <pre>${escapeHtml(item.argumentsPreview)}</pre>
                 </div>
             `).join('');
         }
@@ -5212,11 +5212,11 @@
 
             approvalGrantsOutput.innerHTML = data.items.map(item => `
                 <div class="card" style="margin-bottom:0.75rem;">
-                    <strong>${item.toolName}</strong>
-                    <div class="muted">${item.scope} · ${item.channelId || item.sessionId || 'global'}</div>
-                    <div class="muted">Granted by ${item.grantedBy} via ${item.grantSource}</div>
+                    <strong>${escapeHtml(item.toolName)}</strong>
+                    <div class="muted">${escapeHtml(item.scope)} · ${escapeHtml(item.channelId || item.sessionId || 'global')}</div>
+                    <div class="muted">Granted by ${escapeHtml(item.grantedBy)} via ${escapeHtml(item.grantSource)}</div>
                     <div class="actions" style="margin-top:0.5rem;">
-                        <button class="secondary" data-grant-delete="${item.id}">Delete</button>
+                        <button class="secondary" data-grant-delete="${escapeHtml(item.id)}">Delete</button>
                     </div>
                 </div>
             `).join('');
@@ -5246,13 +5246,13 @@
 
             deadLetterOutput.innerHTML = data.items.map(item => `
                 <div class="card" style="margin-bottom:0.75rem;">
-                    <strong>${item.source}</strong>
-                    <div class="muted">${item.deliveryKey}</div>
-                    <div class="muted">${item.error}</div>
-                    <pre>${item.payloadPreview}</pre>
+                    <strong>${escapeHtml(item.source)}</strong>
+                    <div class="muted">${escapeHtml(item.deliveryKey)}</div>
+                    <div class="muted">${escapeHtml(item.error)}</div>
+                    <pre>${escapeHtml(item.payloadPreview)}</pre>
                     <div class="actions">
-                        <button data-dead-letter-action="replay" data-dead-letter-id="${item.id}">Replay</button>
-                        <button class="secondary" data-dead-letter-action="discard" data-dead-letter-id="${item.id}">Discard</button>
+                        <button data-dead-letter-action="replay" data-dead-letter-id="${escapeHtml(item.id)}">Replay</button>
+                        <button class="secondary" data-dead-letter-action="discard" data-dead-letter-id="${escapeHtml(item.id)}">Discard</button>
                     </div>
                 </div>
             `).join('');

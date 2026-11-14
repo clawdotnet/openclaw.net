@@ -2671,8 +2671,9 @@ public sealed class MafAdapterTests
         try
         {
             var tracker = new MafConcurrencyTracker();
-            var firstTool = new CallerContextCaptureMafTool("first_tool", tracker, 120);
-            var secondTool = new CallerContextCaptureMafTool("second_tool", tracker, 120);
+            var bothStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var firstTool = new CallerContextCaptureMafTool("first_tool", tracker, bothStarted);
+            var secondTool = new CallerContextCaptureMafTool("second_tool", tracker, bothStarted);
             var skills = new SkillDefinition[]
             {
                 new()
@@ -4293,7 +4294,7 @@ public sealed class MafAdapterTests
         }
     }
 
-    private sealed class CallerContextCaptureMafTool(string name, MafConcurrencyTracker tracker, int delayMs) : IToolWithContext
+    private sealed class CallerContextCaptureMafTool(string name, MafConcurrencyTracker tracker, TaskCompletionSource bothStarted) : IToolWithContext
     {
         private McpCallerCredentialContext? _callerCredentialContext;
 
@@ -4309,7 +4310,10 @@ public sealed class MafAdapterTests
             tracker.Enter();
             try
             {
-                await Task.Delay(delayMs, ct);
+                // Prove overlap independently of scheduler delays and first-use compilation.
+                if (tracker.MaxConcurrent >= 2)
+                    bothStarted.TrySetResult();
+                await bothStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
                 return name;
             }
             finally

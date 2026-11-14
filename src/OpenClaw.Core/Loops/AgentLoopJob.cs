@@ -1,15 +1,14 @@
 using System.Diagnostics;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using TickerQ.Utilities.Base;
 
 namespace OpenClaw.Core.Loops;
 
 /// <summary>
-/// TickerQ function that ticks every minute and dispatches due loop prompts.
-/// Polls ClawLoopScheduler.GetDueEntries() and delegates to IAgentLoopDispatcher.
-/// Cuts OTel context on each tick to prevent span nesting across iterations.
+/// Lightweight in-process worker that dispatches due loop prompts.
+/// Cuts OTel context on each iteration to prevent span nesting across iterations.
 /// </summary>
-public sealed class AgentLoopJob
+public sealed class AgentLoopJob : BackgroundService
 {
     private readonly ClawLoopScheduler _scheduler;
     private readonly IAgentLoopDispatcher _dispatcher;
@@ -25,16 +24,21 @@ public sealed class AgentLoopJob
         _logger = logger;
     }
 
-    [TickerFunction("AgentLoopExecutor", cronExpression: "* * * * *")]
-    public async Task ExecuteAsync(TickerFunctionContext context, CancellationToken ct)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        while (await timer.WaitForNextTickAsync(stoppingToken))
+            await DispatchDueAsync(stoppingToken);
+    }
+
+    internal async Task DispatchDueAsync(CancellationToken ct)
     {
         // Cut OTel context to prevent nested span chains across loop iterations
         Activity.Current = null;
 
         try
         {
-            var now = DateTimeOffset.UtcNow;
-            var dueEntries = _scheduler.GetDueEntries(now);
+            var dueEntries = _scheduler.GetDueEntries();
 
             foreach (var entry in dueEntries)
             {

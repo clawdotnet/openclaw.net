@@ -87,7 +87,8 @@ internal sealed class TwilioSmsWebhookHandler
         IReadOnlyDictionary<string, string> form,
         string? providedSignature,
         Func<InboundMessage, CancellationToken, ValueTask> enqueue,
-        CancellationToken ct)
+        CancellationToken ct,
+        Func<bool>? tryBeginDelivery = null)
     {
         if (!_config.Enabled)
             return WebhookResult.NotFound();
@@ -119,6 +120,9 @@ internal sealed class TwilioSmsWebhookHandler
                 return WebhookResult.TwiMl(_config.HelpText);
             return WebhookResult.Unauthorized();
         }
+
+        if (tryBeginDelivery is not null && !tryBeginDelivery())
+            return WebhookResult.Ok();
 
         await _recentSenders.RecordAsync("sms", from, senderName: null, ct);
 

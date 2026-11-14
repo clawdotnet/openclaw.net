@@ -833,7 +833,7 @@ internal sealed class IntegrationApiFacade
         bool authenticatedUserIsAdmin = false,
         McpCallerCredentialContext? callerCredentialContext = null)
     {
-        var (effectiveChannelId, effectiveSenderId, effectiveSessionId) = ResolveTarget(request);
+        var (effectiveChannelId, effectiveSenderId, effectiveSessionId) = ResolveTarget(request, authenticatedUserId);
 
         await _runtime.RecentSenders.RecordAsync(effectiveChannelId, effectiveSenderId, senderName: null, cancellationToken);
 
@@ -987,14 +987,15 @@ internal sealed class IntegrationApiFacade
     /// </summary>
     public async Task<bool> CanWriteSessionAsync(IntegrationMessageRequest request, string? accountId, bool isAdmin, CancellationToken cancellationToken)
     {
-        var session = await _runtime.SessionManager.LoadAsync(ResolveTarget(request).SessionId, cancellationToken);
+        var session = await _runtime.SessionManager.LoadAsync(ResolveTarget(request, accountId).SessionId, cancellationToken);
         return session is null || SessionAccess.CanWrite(session, accountId, isAdmin);
     }
 
-    private static (string ChannelId, string SenderId, string SessionId) ResolveTarget(IntegrationMessageRequest request)
+    private static (string ChannelId, string SenderId, string SessionId) ResolveTarget(IntegrationMessageRequest request, string? accountId)
     {
         var channelId = string.IsNullOrWhiteSpace(request.ChannelId) ? "integration-api" : request.ChannelId.Trim();
-        var senderId = string.IsNullOrWhiteSpace(request.SenderId) ? "http-client" : request.SenderId.Trim();
+        var defaultSenderId = string.IsNullOrWhiteSpace(accountId) ? "http-client" : $"account:{accountId}";
+        var senderId = string.IsNullOrWhiteSpace(request.SenderId) ? defaultSenderId : request.SenderId.Trim();
         var sessionId = string.IsNullOrWhiteSpace(request.SessionId) ? $"{channelId}:{senderId}" : request.SessionId.Trim();
         return (channelId, senderId, sessionId);
     }

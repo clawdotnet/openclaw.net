@@ -262,6 +262,8 @@ Surfaces that run turns set it from the signed-in account (`EndpointHelpers.Reso
 | `POST /v1/chat/completions`, `POST /v1/responses`, `POST /apps/chat` | Account of the request |
 | A2A execution | Account of the request; the A2A `contextId` is only the sender id |
 
+When an integration or MCP message omits both `senderId` and `sessionId`, an authenticated account receives its own default conversation. Bootstrap callers retain the `http-client` routing default. Explicit routing values continue to select the requested conversation subject to its ownership check. Existing conversations can be reopened with their recorded session ID.
+
 Open loopback and bootstrap callers have no account, so their turns run without one.
 
 A pipeline turn from an external sender without an account runs without one too. It does not inherit the account of whoever wrote to the session before. For example, a Telegram user's turn never runs as an operator who posted into that Telegram session. System, scheduled, automation, and background-continuation turns act on the session's behalf and keep its identity.
@@ -488,3 +490,5 @@ In this mode, `AuthMode` is `"token"` but `Oidc.Authority` is set, so the JWT au
 4. **JWT validation**: Full signature, issuer, audience, and expiration validation is provided by the ASP.NET Core JWT Bearer middleware
 5. **Rate limiting**: All authenticated endpoints are subject to rate limiting, keyed by IP, operator account, and browser session
 6. **Origin checking**: WebSocket endpoints validate the `Origin` header to prevent cross-site WebSocket hijacking
+
+Operator account creation enables an account by default when `enabled` is omitted. Supplying `enabled=false` creates a disabled account.

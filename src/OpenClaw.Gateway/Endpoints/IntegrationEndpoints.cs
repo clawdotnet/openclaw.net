@@ -804,7 +804,7 @@ internal static class IntegrationEndpoints
                     ctx.RequestAborted);
                 return Results.Json(new List<FundingSource>(items), PaymentJsonContext.Default.ListFundingSource);
             }
-            catch (ArgumentException ex)
+            catch (Exception ex) when (ex is ArgumentException or PaymentPolicyDeniedException)
             {
                 return BadPaymentRequest(ex.Message);
             }
@@ -812,7 +812,7 @@ internal static class IntegrationEndpoints
 
         group.MapPost("/payment/virtual-card", async (HttpContext ctx) =>
         {
-            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, endpointScope: "integration.mutate", requireCsrf: false);
+            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, endpointScope: "integration.mutate", requireCsrf: true);
             if (failure is not null)
                 return failure;
             if (!startup.Config.Payments.Enabled)
@@ -855,7 +855,7 @@ internal static class IntegrationEndpoints
 
         group.MapPost("/payment/execute", async (HttpContext ctx) =>
         {
-            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, endpointScope: "integration.mutate", requireCsrf: false);
+            var failure = AuthorizeAndConsume(ctx, startup, runtime, browserSessions, endpointScope: "integration.mutate", requireCsrf: true);
             if (failure is not null)
                 return failure;
             if (!startup.Config.Payments.Enabled)
@@ -882,9 +882,17 @@ internal static class IntegrationEndpoints
                         ProviderId = request.ProviderId ?? startup.Config.Payments.Provider,
                         Environment = NormalizePaymentEnvironment(string.IsNullOrWhiteSpace(request.Environment) ? startup.Config.Payments.Environment : request.Environment)
                     },
-                    BuildPaymentContext(ctx, startup.Config),
+                    BuildPaymentContext(ctx, startup.Config) with
+                    {
+                        CallerId = EndpointHelpers.ResolveCaller(ctx, startup).AccountId ?? "bootstrap"
+                    },
                     ctx.RequestAborted);
                 return Results.Json(result, PaymentJsonContext.Default.MachinePaymentResult);
+            }
+            catch (PaymentIdempotencyException ex)
+            {
+                return Results.Json(new OperationStatusResponse { Success = false, Error = $"{ex.Code}: {ex.Message}" },
+                    CoreJsonContext.Default.OperationStatusResponse, statusCode: StatusCodes.Status409Conflict);
             }
             catch (PaymentPolicyDeniedException ex)
             {
@@ -911,7 +919,7 @@ internal static class IntegrationEndpoints
                     await runtime.PaymentRuntime.GetPaymentStatusAsync(id, provider, BuildPaymentContext(ctx, startup.Config), ctx.RequestAborted),
                     PaymentJsonContext.Default.PaymentStatus);
             }
-            catch (ArgumentException ex)
+            catch (Exception ex) when (ex is ArgumentException or PaymentPolicyDeniedException)
             {
                 return BadPaymentRequest(ex.Message);
             }

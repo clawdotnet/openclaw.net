@@ -1,9 +1,10 @@
 using System.Text.Json;
 using OpenClaw.Payments.Abstractions;
+using OpenClaw.Payments.Core;
 
 namespace OpenClaw.Payments.StripeLink;
 
-public sealed class StripeLinkPaymentProvider : IPaymentProvider
+public sealed class StripeLinkPaymentProvider : IPaymentProvider, IPaymentProviderPreflight
 {
     private readonly StripeLinkOptions _options;
     private readonly ILinkCliCommandRunner _runner;
@@ -15,6 +16,9 @@ public sealed class StripeLinkPaymentProvider : IPaymentProvider
     }
 
     public string ProviderId => _options.ProviderId;
+
+    public void ValidateMachinePayment(MachinePaymentRequest request, PaymentExecutionContext context)
+        => GetAuthorizedMode(context);
 
     public async ValueTask<PaymentSetupStatus> GetSetupStatusAsync(CancellationToken ct)
     {
@@ -69,7 +73,7 @@ public sealed class StripeLinkPaymentProvider : IPaymentProvider
 
     public async ValueTask<IReadOnlyList<FundingSource>> ListFundingSourcesAsync(PaymentExecutionContext context, CancellationToken ct)
     {
-        var result = await RunJsonAsync(["funding-sources", "list", "--json", "--mode", _options.Mode], ct);
+        var result = await RunJsonAsync(["funding-sources", "list", "--json", "--mode", GetAuthorizedMode(context)], ct);
         if (result.ExitCode != 0)
             throw new InvalidOperationException($"Stripe Link funding source list failed: {result.Stderr}");
 
@@ -84,7 +88,7 @@ public sealed class StripeLinkPaymentProvider : IPaymentProvider
             "issue",
             "--json",
             "--mode",
-            _options.Mode,
+            GetAuthorizedMode(context),
             "--merchant",
             request.MerchantName,
             "--amount",
@@ -110,7 +114,7 @@ public sealed class StripeLinkPaymentProvider : IPaymentProvider
             "execute",
             "--json",
             "--mode",
-            _options.Mode,
+            GetAuthorizedMode(context),
             "--amount",
             request.Challenge.AmountMinor.ToString(System.Globalization.CultureInfo.InvariantCulture),
             "--currency",
@@ -130,11 +134,20 @@ public sealed class StripeLinkPaymentProvider : IPaymentProvider
 
     public async ValueTask<PaymentStatus> GetPaymentStatusAsync(string paymentIdOrHandleId, PaymentExecutionContext context, CancellationToken ct)
     {
-        var result = await RunJsonAsync(["status", "--json", "--mode", _options.Mode, "--id", paymentIdOrHandleId], ct);
+        var result = await RunJsonAsync(["status", "--json", "--mode", GetAuthorizedMode(context), "--id", paymentIdOrHandleId], ct);
         if (result.ExitCode != 0)
             throw new InvalidOperationException($"Stripe Link status failed: {result.Stderr}");
 
         return ParseStatus(result.Stdout, paymentIdOrHandleId);
+    }
+
+    private string GetAuthorizedMode(PaymentExecutionContext context)
+    {
+        var configured = PaymentEnvironments.Normalize(_options.Mode);
+        if (PaymentEnvironments.Normalize(context.Environment) != configured)
+            throw new PaymentPolicyDeniedException($"Requested payment environment does not match the configured Stripe Link mode '{configured}'.");
+
+        return configured;
     }
 
     private ValueTask<LinkCliCommandResult> RunJsonAsync(IReadOnlyList<string> arguments, CancellationToken ct)
@@ -217,7 +230,14 @@ public sealed class StripeLinkPaymentProvider : IPaymentProvider
     {
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
-        var paymentId = ReadString(root, "payment_id") ?? ReadString(root, "paymentId") ?? ReadString(root, "id") ?? $"stripe_mp_{Guid.NewGuid():N}";
+        var paymentId = ReadString(root, "payment_id") ?? ReadString(root, "paymentId") ?? ReadString(root, "id");
+        var status = ReadString(root, "status");
+        if (string.IsNullOrWhiteSpace(paymentId) || string.IsNullOrWhiteSpace(status))
+        {
+            throw new PaymentIdempotencyException(
+                "payment_outcome_unknown",
+                "Stripe Link returned an ambiguous payment response. Reconcile with the provider before retrying.");
+        }
         var auth = ReadString(root, "authorization_header") ?? ReadString(root, "authorizationHeader");
         var token = ReadString(root, "authorization_token") ?? ReadString(root, "authorizationToken") ?? ReadString(root, "token");
 
@@ -227,7 +247,7 @@ public sealed class StripeLinkPaymentProvider : IPaymentProvider
             {
                 PaymentId = paymentId,
                 ProviderId = ProviderId,
-                Status = ReadString(root, "status") ?? "completed",
+                Status = status,
                 MerchantName = request.Challenge.MerchantName,
                 AmountMinor = request.Challenge.AmountMinor,
                 Currency = request.Challenge.Currency,

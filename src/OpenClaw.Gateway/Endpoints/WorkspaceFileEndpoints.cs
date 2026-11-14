@@ -12,6 +12,14 @@ internal static class WorkspaceFileEndpoints
 {
     private const long MaxUploadBytes = 100 * 1024 * 1024; // 100 MB
 
+    private static readonly EnumerationOptions SkipLinks = new() { AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = false };
+    private static readonly EnumerationOptions RecurseWithoutLinks = new()
+    {
+        RecurseSubdirectories = true,
+        IgnoreInaccessible = false,
+        AttributesToSkip = FileAttributes.ReparsePoint
+    };
+
     public static void MapOpenClawWorkspaceFileEndpoints(
         this WebApplication app,
         GatewayStartupContext startup,
@@ -25,15 +33,11 @@ internal static class WorkspaceFileEndpoints
         // Special case: a single .zip file is extracted into workspace/<dir>/ instead.
         app.MapPost("/admin/workspace/upload", async (HttpContext ctx) =>
         {
-            var auth = EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: true);
-            if (!auth.IsAuthorized)
-                return Results.Unauthorized();
-
-            if (!EndpointHelpers.TryConsumeOperatorRateLimit(ctx, operations, auth, "admin.control", out var blockedByPolicyId))
-                return Results.Json(
-                    new WorkspaceUploadResponse { Success = false, Error = $"Rate limit exceeded by policy '{blockedByPolicyId}'." },
-                    CoreJsonContext.Default.WorkspaceUploadResponse,
-                    statusCode: StatusCodes.Status429TooManyRequests);
+            var access = EndpointHelpers.AuthorizeOperatorEndpoint(ctx, startup, browserSessions, operations,
+                requireCsrf: true, endpointScope: "admin.workspace.files", rateLimitScope: "admin.control");
+            if (access.Failure is not null)
+                return access.Failure;
+            var auth = access.Authorization!;
 
             var workspacePath = startup.WorkspacePath
                 ?? SecretResolver.Resolve(startup.Config.Tooling.WorkspaceRoot);
@@ -55,13 +59,12 @@ internal static class WorkspaceFileEndpoints
 
             EndpointHelpers.TrySetMaxRequestBodySize(ctx, MaxUploadBytes);
 
-            if (!ctx.Request.HasFormContentType || ctx.Request.Form.Files.Count == 0)
+            var files = ctx.Request.HasFormContentType ? (await ctx.Request.ReadFormAsync(ctx.RequestAborted)).Files : null;
+            if (files is null || files.Count == 0)
                 return Results.Json(
                     new WorkspaceUploadResponse { Success = false, Error = "No files uploaded. Send multipart/form-data with one or more files." },
                     CoreJsonContext.Default.WorkspaceUploadResponse,
                     statusCode: StatusCodes.Status400BadRequest);
-
-            var files = ctx.Request.Form.Files;
 
             // Single ZIP file → extract into target directory.
             if (files.Count == 1 && IsZipFile(files[0]))
@@ -92,7 +95,6 @@ internal static class WorkspaceFileEndpoints
                 long totalUncompressed = 0;
                 try
                 {
-                    Directory.CreateDirectory(targetDir);
                     using var zip = new ZipArchive(new MemoryStream(zipBytes), ZipArchiveMode.Read);
                     foreach (var entry in zip.Entries.Where(static entry => !string.IsNullOrEmpty(entry.Name)))
                     {
@@ -110,18 +112,12 @@ internal static class WorkspaceFileEndpoints
                                 CoreJsonContext.Default.WorkspaceUploadResponse,
                                 statusCode: StatusCodes.Status400BadRequest);
 
-                        // ZIP-slip guard (step 2): create the parent directory first so
-                        // that ResolveRealPath can walk any existing symlinks/junctions,
-                        // then re-validate containment on the real filesystem path.
-                        Directory.CreateDirectory(Path.GetDirectoryName(entryFull)!);
-                        var realEntryFull = ResolveRealPath(entryFull);
-                        if (!IsInsideDirectory(realEntryFull, workspaceRoot))
-                            continue; // symlink/junction escape — skip
-
-                        await using var outStream = new FileStream(realEntryFull, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 65536, useAsync: true);
+                        if (!WorkspacePathHelpers.IsSafeWorkspacePath(entryFull, workspaceRoot))
+                            continue;
+                        await using var outStream = SecureFileSystem.OpenForWriteUnderRoot(workspaceRoot, entryFull);
                         await using var entryStream = entry.Open();
                         await entryStream.CopyToAsync(outStream, ctx.RequestAborted);
-                        extracted.Add(Path.GetRelativePath(workspaceRoot, realEntryFull).Replace('\\', '/'));
+                        extracted.Add(Path.GetRelativePath(workspaceRoot, entryFull).Replace('\\', '/'));
                     }
                 }
                 catch (Exception ex)
@@ -145,7 +141,6 @@ internal static class WorkspaceFileEndpoints
             var saved = new List<string>();
             try
             {
-                Directory.CreateDirectory(targetDir);
                 foreach (var file in files.Where(static file => file.Length != 0))
                 {
                     if (file.Length > MaxUploadBytes)
@@ -159,13 +154,13 @@ internal static class WorkspaceFileEndpoints
                         safeName = "upload.bin";
 
                     var destPath = Path.GetFullPath(Path.Combine(targetDir, safeName));
-                    if (!IsInsideDirectory(destPath, targetDir))
+                    if (!WorkspacePathHelpers.IsSafeWorkspacePath(destPath, workspaceRoot))
                         return Results.Json(
                             new WorkspaceUploadResponse { Success = false, Error = $"Invalid filename: '{file.FileName}'." },
                             CoreJsonContext.Default.WorkspaceUploadResponse,
                             statusCode: StatusCodes.Status400BadRequest);
 
-                    await using var outStream = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 65536, useAsync: true);
+                    await using var outStream = SecureFileSystem.OpenForWriteUnderRoot(workspaceRoot, destPath);
                     await file.CopyToAsync(outStream, ctx.RequestAborted);
                     saved.Add(Path.GetRelativePath(workspaceRoot, destPath).Replace('\\', '/'));
                 }
@@ -192,9 +187,10 @@ internal static class WorkspaceFileEndpoints
         // depth defaults to 6; use 0 for unlimited (use with caution on large workspaces).
         app.MapGet("/admin/workspace/tree", async (HttpContext ctx) =>
         {
-            var auth = EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false);
-            if (!auth.IsAuthorized)
-                return Results.Unauthorized();
+            var access = EndpointHelpers.AuthorizeOperatorEndpoint(ctx, startup, browserSessions, operations,
+                requireCsrf: false, endpointScope: "admin.workspace.files");
+            if (access.Failure is not null)
+                return access.Failure;
 
             var workspacePath = startup.WorkspacePath
                 ?? SecretResolver.Resolve(startup.Config.Tooling.WorkspaceRoot);
@@ -242,9 +238,9 @@ internal static class WorkspaceFileEndpoints
                     var children = new List<WorkspaceTreeEntry>();
                     try
                     {
-                        foreach (var sub in Directory.GetDirectories(fullPath).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+                        foreach (var sub in Directory.GetDirectories(fullPath, "*", SkipLinks).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
                             children.Add(BuildEntry(sub, wsRoot, depth + 1, maxDepth));
-                        foreach (var file in Directory.GetFiles(fullPath).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+                        foreach (var file in Directory.GetFiles(fullPath, "*", SkipLinks).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
                             children.Add(BuildEntry(file, wsRoot, depth + 1, maxDepth));
                     }
                     catch { /* ignore permission errors on individual dirs */ }
@@ -266,9 +262,9 @@ internal static class WorkspaceFileEndpoints
                 entries = [];
                 try
                 {
-                    foreach (var sub in Directory.GetDirectories(targetPath).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+                    foreach (var sub in Directory.GetDirectories(targetPath, "*", SkipLinks).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
                         entries.Add(BuildEntry(sub, workspaceRoot, 1, maxDepth));
-                    foreach (var file in Directory.GetFiles(targetPath).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+                    foreach (var file in Directory.GetFiles(targetPath, "*", SkipLinks).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
                         entries.Add(BuildEntry(file, workspaceRoot, 1, maxDepth));
                 }
                 catch (Exception ex)
@@ -290,9 +286,10 @@ internal static class WorkspaceFileEndpoints
         // Returns a flat (one-level) directory listing with { files: [{ name, path, isDirectory, size }] }.
         app.MapGet("/admin/workspace/browse", async (HttpContext ctx) =>
         {
-            var auth = EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false);
-            if (!auth.IsAuthorized)
-                return Results.Unauthorized();
+            var access = EndpointHelpers.AuthorizeOperatorEndpoint(ctx, startup, browserSessions, operations,
+                requireCsrf: false, endpointScope: "admin.workspace.files");
+            if (access.Failure is not null)
+                return access.Failure;
 
             var workspacePath = startup.WorkspacePath
                 ?? SecretResolver.Resolve(startup.Config.Tooling.WorkspaceRoot);
@@ -321,14 +318,14 @@ internal static class WorkspaceFileEndpoints
             var entries = new List<WorkspaceBrowseEntry>();
             try
             {
-                foreach (var dir in Directory.GetDirectories(targetPath).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+                foreach (var dir in Directory.GetDirectories(targetPath, "*", SkipLinks).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
                     entries.Add(new WorkspaceBrowseEntry
                     {
                         Name = Path.GetFileName(dir),
                         Path = Path.GetRelativePath(workspaceRoot, dir).Replace('\\', '/'),
                         IsDirectory = true
                     });
-                foreach (var file in Directory.GetFiles(targetPath).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+                foreach (var file in Directory.GetFiles(targetPath, "*", SkipLinks).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
                     entries.Add(new WorkspaceBrowseEntry
                     {
                         Name = Path.GetFileName(file),
@@ -356,9 +353,10 @@ internal static class WorkspaceFileEndpoints
         // - Directory → packed as ZIP and streamed.
         app.MapGet("/admin/workspace/download", async (HttpContext ctx) =>
         {
-            var auth = EndpointHelpers.AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf: false);
-            if (!auth.IsAuthorized)
-                return Results.Unauthorized();
+            var access = EndpointHelpers.AuthorizeOperatorEndpoint(ctx, startup, browserSessions, operations,
+                requireCsrf: false, endpointScope: "admin.workspace.files");
+            if (access.Failure is not null)
+                return access.Failure;
 
             var workspacePath = startup.WorkspacePath
                 ?? SecretResolver.Resolve(startup.Config.Tooling.WorkspaceRoot);
@@ -378,7 +376,7 @@ internal static class WorkspaceFileEndpoints
                     CoreJsonContext.Default.WorkspaceUploadResponse,
                     statusCode: StatusCodes.Status400BadRequest);
 
-            // Directory → stream ZIP directly to response (avoids buffering full archive in memory).
+            // Directory → stage a temporary ZIP and stream it asynchronously.
             if (Directory.Exists(targetPath))
             {
                 var dirName = Path.GetFileName(targetPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
@@ -386,24 +384,32 @@ internal static class WorkspaceFileEndpoints
                     dirName = "workspace";
                 var zipName = $"{dirName}.zip";
 
-                ctx.Response.ContentType = "application/zip";
-                ctx.Response.Headers.ContentDisposition = $"attachment; filename=\"{zipName}\"";
-                ctx.Response.StatusCode = StatusCodes.Status200OK;
-
-                using (var zip = new ZipArchive(ctx.Response.Body, ZipArchiveMode.Create, leaveOpen: true))
+                // ZIP finalization can write synchronously. Stage on disk so the HTTP
+                // response remains asynchronous and large workspaces stay out of memory.
+                var archivePath = Path.Join(Path.GetTempPath(), $"openclaw-workspace-{Guid.NewGuid():N}.zip");
+                var archiveOptions = new FileStreamOptions
                 {
-                    foreach (var filePath in Directory.EnumerateFiles(targetPath, "*", SearchOption.AllDirectories))
-                    {
-                        ctx.RequestAborted.ThrowIfCancellationRequested();
-                        var entryName = Path.GetRelativePath(targetPath, filePath).Replace('\\', '/');
-                        var entry = zip.CreateEntry(entryName, CompressionLevel.Optimal);
-                        await using var entryStream = entry.Open();
-                        await using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 65536, useAsync: true);
-                        await fileStream.CopyToAsync(entryStream, ctx.RequestAborted);
-                    }
-                }
+                    Mode = FileMode.CreateNew,
+                    Access = FileAccess.ReadWrite,
+                    Share = FileShare.Read,
+                    BufferSize = 65536,
+                    Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose
+                };
+                if (!OperatingSystem.IsWindows())
+                    archiveOptions.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+                var archiveStream = new FileStream(archivePath, archiveOptions);
+                try
+                {
+                    await WriteDirectoryArchiveAsync(workspaceRoot, targetPath, archiveStream, archivePath, ctx.RequestAborted);
 
-                return Results.Empty;
+                    archiveStream.Position = 0;
+                    return Results.Stream(archiveStream, "application/zip", zipName);
+                }
+                catch
+                {
+                    await archiveStream.DisposeAsync();
+                    throw;
+                }
             }
 
             // Single file → stream directly.
@@ -411,7 +417,8 @@ internal static class WorkspaceFileEndpoints
             {
                 var fileName = Path.GetFileName(targetPath);
                 var contentType = GetContentType(fileName);
-                return Results.File(targetPath, contentType, fileName, enableRangeProcessing: false);
+                return Results.Stream(SecureFileSystem.OpenForReadUnderRoot(workspaceRoot, targetPath),
+                    contentType, fileName, enableRangeProcessing: false);
             }
 
             return Results.Json(
@@ -420,6 +427,27 @@ internal static class WorkspaceFileEndpoints
                 statusCode: StatusCodes.Status404NotFound);
         });
 
+    }
+
+    internal static async Task WriteDirectoryArchiveAsync(
+        string workspaceRoot, string targetPath, Stream archiveStream, string archivePath,
+        CancellationToken cancellationToken)
+    {
+        using (var zip = new ZipArchive(archiveStream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var filePath in Directory.EnumerateFiles(targetPath, "*", RecurseWithoutLinks))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (string.Equals(Path.GetFullPath(filePath), archivePath,
+                        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                    continue;
+                var entryName = Path.GetRelativePath(targetPath, filePath).Replace('\\', '/');
+                var entry = zip.CreateEntry(entryName, CompressionLevel.Optimal);
+                await using var entryStream = entry.Open();
+                await using var fileStream = SecureFileSystem.OpenForReadUnderRoot(workspaceRoot, filePath);
+                await fileStream.CopyToAsync(entryStream, cancellationToken);
+            }
+        }
     }
 
     /// <summary>
@@ -446,33 +474,14 @@ internal static class WorkspaceFileEndpoints
 
         var full = Path.GetFullPath(Path.Combine(workspaceRoot, cleaned));
 
-        // Resolve symlink / junction targets so containment checks use
-        // the real filesystem path, not the logical reparse-point path.
-        var realFull = ResolveRealPath(full);
-
-        // Final containment check after symlink/alias expansion.
-        if (!IsInsideDirectory(realFull, workspaceRoot))
+        if (!WorkspacePathHelpers.IsSafeWorkspacePath(full, workspaceRoot))
         {
-            error = "Path escapes the workspace root.";
+            error = "Path escapes the workspace root or crosses a filesystem link.";
             return null;
         }
 
-        return realFull;
+        return full;
     }
-
-    /// <summary>
-    /// Returns true when <paramref name="path"/> is the directory itself or a descendant of it.
-    /// </summary>
-    private static bool IsInsideDirectory(string path, string directory)
-        => WorkspacePathHelpers.IsInsideDirectory(path, directory);
-
-    /// <summary>
-    /// Walks each component of <paramref name="path"/> and resolves any symlink or junction
-    /// targets so that containment checks operate on the real filesystem path.
-    /// Non-existent components are kept as-is (they cannot be links).
-    /// </summary>
-    private static string ResolveRealPath(string path)
-        => WorkspacePathHelpers.ResolveRealPath(path);
 
     private static bool IsZipFile(IFormFile file)
         => string.Equals(Path.GetExtension(file.FileName ?? ""), ".zip", StringComparison.OrdinalIgnoreCase);

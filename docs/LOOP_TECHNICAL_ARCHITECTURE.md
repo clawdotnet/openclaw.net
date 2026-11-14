@@ -1,11 +1,11 @@
 # OpenClaw.NET /loop Command — Technical Architecture
 
-> A TickerQ-powered session-scoped recurring prompt injection mechanism. Users set a /loop command and the system automatically injects preset prompts into the session at specified intervals, driving agent turns forward. Supports idempotent override and dual-path semantic auto-termination; active loop entries currently live in memory and do not survive process restarts.
+> A lightweight hosted-service scheduler for session-scoped recurring prompt injection. Users set a /loop command and the system automatically injects preset prompts at intervals of at least 60 seconds, driving agent turns forward. Active loop entries live in memory and do not survive process restarts.
 
-- **Status:** Implemented (branch: `Feature/Codex-loop`)
-- **Commits:** `78d115e`, `bb58cf3`, `42acf7c`
-- **Total changes:** +1,033 lines across 11 files
-- **Tests:** 62 passed, 0 failed
+- **Status:** Implemented
+- **Minimum interval:** 60 seconds
+- **Persistence:** In-memory; active loops do not survive process restarts
+- **Validation:** Covered by the repository's loop, command, and integration test suites
 
 ---
 
@@ -15,7 +15,7 @@
 2. [Architecture Overview](#2-architecture-overview)
 3. [Component Inventory](#3-component-inventory)
 4. [Loop Lifecycle State Machine](#4-loop-lifecycle-state-machine)
-5. [TickerQ Scheduling Engine](#5-tickerq-scheduling-engine)
+5. [Hosted Scheduling Engine](#5-hosted-scheduling-engine)
 6. [Dual-Path Semantic Termination](#6-dual-path-semantic-termination)
 7. [CLI & Chat Channel Commands](#7-cli--chat-channel-commands)
 8. [Gateway DI & Wiring](#8-gateway-di--wiring)
@@ -35,7 +35,7 @@
 In daily development and operations, numerous scenarios require an agent to autonomously execute tasks on a fixed schedule:
 
 - **Build health checks:** Check CI status every 5 minutes, report issues immediately
-- **Log polling:** Scan production logs for anomaly patterns every 30 seconds
+- **Log polling:** Scan production logs for anomaly patterns every 60 seconds
 - **Periodic code review:** Review the latest commits every 2 hours
 - **Environment monitoring:** Check server resource usage every hour
 
@@ -45,7 +45,7 @@ Traditional approaches require users to repeatedly type the same instruction, or
 
 `/loop` is a **recurring prompt injection** command. When a user types `/loop 5m check build status` in a session, the system:
 
-1. Parses the interval into a standard cron expression
+1. Parses the interval as an elapsed duration anchored to registration time
 2. Stores the loop entry in the in-memory scheduler registry
 3. On each polling tick that finds the entry due, injects the preset prompt as a system message into the session
 4. Advances the agent through a full tool-calling loop, producing a response
@@ -55,7 +55,7 @@ Traditional approaches require users to repeatedly type the same instruction, or
 
 | Feature | Codex /loop | OpenClaw.NET /loop |
 |---------|-------------|---------------------|
-| Scheduling engine | In-memory timer (dies with client) | **TickerQ minute polling + in-memory loop registry** |
+| Scheduling engine | In-memory timer (dies with client) | **Hosted one-second poller + in-memory loop registry** |
 | Restart recovery | ❌ Lost | ❌ Active loop registry lost on restart (persistence planned) |
 | Idempotent override | ✅ Single per session | ✅ Single per session |
 | Semantic auto-stop | ✅ Keyword detection | ✅ **Dual-path (tool + keyword)** |
@@ -87,15 +87,15 @@ Traditional approaches require users to repeatedly type the same instruction, or
 │  ┌──────────────────┐   ┌──────────────────────────────┐           │
 │  │ ClawLoopScheduler │──▶│ ConcurrentDictionary          │           │
 │  │  · ScheduleLoop   │   │   sessionId → LoopEntry       │           │
-│  │  · CancelLoop     │   │   (cron expression + state)    │           │
+│  │  · CancelLoop     │   │   (duration + next-run state)    │           │
 │  │  · GetLoopStatus  │   └──────────┬───────────────────┘           │
-│  └────────▲─────────┘               │ polled every minute            │
+│  └────────▲─────────┘               │ polled every second            │
 │           │                         ▼                                │
 │  ┌────────┴─────────┐   ┌──────────────────────────────┐           │
 │  │ ILoopControlService│  │ AgentLoopJob                  │           │
-│  │  · SignalComplete  │  │ [TickerFunction(              │           │
-│  └────────▲─────────┘   │   "AgentLoopExecutor",         │           │
-│           │              │   cronExpression: "* * * * *")]│           │
+│  │  · SignalComplete  │  │ BackgroundService +          │           │
+│  └────────▲─────────┘   │ PeriodicTimer (one second)     │           │
+│           │              │                                │           │
 │  ┌────────┴─────────────┐──────────────────────────────┘           │
 │  │ LoopTerminationDetector                                           │
 │  │  Path 1 (primary): loop_control tool → SignalComplete            │
@@ -117,7 +117,7 @@ Traditional approaches require users to repeatedly type the same instruction, or
 
 **Key design principles:**
 
-- **Core/Loops/** is a pure scheduling layer—no dependency on Agent or Gateway, only TickerQ + DI abstractions
+- **Core/Loops/** is a pure scheduling layer—no dependency on Agent or Gateway, only hosting, logging, and DI abstractions
 - **Zero AgentRuntime invasion:** loop prompts are injected via `MessagePipeline.InboundWriter`, following the same path as normal user messages
 - **Goal path unaffected:** `/loop` and `/goal` are independent scheduling entry points sharing AgentRuntime but with fully isolated lifecycle management
 
@@ -130,9 +130,9 @@ Traditional approaches require users to repeatedly type the same instruction, or
 | `AgentLoopRequestPayload` | `Core/Loops/AgentLoopRequestPayload.cs` | Strongly-typed JSON payload record (sessionId + prompt), AOT-safe source-gen serialization |
 | `IAgentLoopDispatcher` | `Core/Loops/IAgentLoopDispatcher.cs` | Dispatch interface: injects loop prompt into session and advances the turn |
 | `ILoopControlService` | `Core/Loops/ILoopControlService.cs` | Termination signal interface: receives completion notifications from tool or detector |
-| `ClawLoopScheduler` | `Core/Loops/ClawLoopScheduler.cs` | Scheduling facade: manages `ConcurrentDictionary<string, LoopEntry>` registry, provides Schedule/Cancel/Status + `IntervalToCron()` static method |
-| `LoopEntry` | `Core/Loops/ClawLoopScheduler.cs` | Single loop entry: sessionId, prompt, cron expression, NCrontab-parsed `CrontabSchedule`, next trigger time |
-| `AgentLoopJob` | `Core/Loops/AgentLoopJob.cs` | `[TickerFunction("AgentLoopExecutor", cronExpression: "* * * * *")]`: polls registry every minute, dispatches due entries |
+| `ClawLoopScheduler` | `Core/Loops/ClawLoopScheduler.cs` | Scheduling facade: manages `ConcurrentDictionary<string, LoopEntry>` registry, provides duration and cron scheduling, Cancel/Status, and `ParseInterval()` |
+| `LoopEntry` | `Core/Loops/ClawLoopScheduler.cs` | Single loop entry: sessionId, prompt, fixed duration or NCrontab schedule, next trigger time |
+| `AgentLoopJob` | `Core/Loops/AgentLoopJob.cs` | Hosted `BackgroundService`: polls the registry every second and dispatches due entries |
 | `LoopTerminationDetector` | `Core/Loops/LoopTerminationDetector.cs` | Dual-path termination detection: structured tool signal (primary) + `FrozenSet<string>` keyword match (fallback) |
 | `LoopCommandParser` | `Core/Loops/LoopCommandParser.cs` | `[GeneratedRegex]` compile-time parsing of `/loop <value><unit> <prompt>` syntax |
 | `LoopAction` / `LoopCommand` | `Core/Loops/LoopCommandParser.cs` | Command model enum (Schedule/Cancel/Status/Invalid) and POCO |
@@ -150,7 +150,7 @@ Traditional approaches require users to repeatedly type the same instruction, or
 | State | Meaning | Trigger |
 |-------|---------|---------|
 | **Scheduled** | Loop registered, awaiting timer | `/loop <interval> <prompt>` |
-| **Running** | A loop turn is executing | TickerQ polling tick finds a due entry |
+| **Running** | A loop turn is executing | Hosted polling tick finds a due entry |
 | **Overridden** | Replaced by a new `/loop` command | Same session issues another `/loop` |
 | **Terminated** | Auto or manually canceled (terminal) | Semantic detection fires or `/loop cancel` |
 
@@ -196,42 +196,41 @@ Traditional approaches require users to repeatedly type the same instruction, or
 
 ---
 
-## 5. TickerQ Scheduling Engine
+## 5. Hosted Scheduling Engine
 
 ### Architecture Choice
 
-TickerQ 10.4.0's public API does not expose `ICronTickerManager` for dynamic registration. The solution uses a **compile-time `[TickerFunction]` + in-memory registry** hybrid:
+The scheduler uses a hosted `BackgroundService` with `PeriodicTimer` and an in-memory registry. This avoids creating one operating-system timer or durable scheduler job per session:
 
 ```plaintext
-Compile-time                             Runtime
+Hosted worker                         Runtime registry
 ┌──────────────────────────┐      ┌──────────────────────────┐
-│ [TickerFunction(          │      │ ClawLoopScheduler         │
-│   "AgentLoopExecutor",    │      │   ConcurrentDictionary    │
-│   cronExpression:         │────────▶  sessionId → LoopEntry   │
-│   "* * * * *")]           │ every │   (cron + nextTrigger)   │
-│ AgentLoopJob.ExecuteAsync │ minute│                          │
-└──────────────────────────┘      │ AgentLoopJob polls         │
-                                   │ every minute:             │
-                                   │   var due = scheduler     │
-                                   │     .GetDueEntries(now);  │
-                                   │   foreach → DispatchAsync │
-                                   └──────────────────────────┘
+│ AgentLoopJob              │      │ ClawLoopScheduler         │
+│ BackgroundService         │      │ ConcurrentDictionary      │
+│ PeriodicTimer(1 second)   │─────▶│ sessionId → LoopEntry    │
+│ DispatchDueAsync          │      │ duration/cron + nextRun   │
+└──────────────────────────┘      └──────────────────────────┘
 ```
 
-### Cron Expression Generation
+### Duration Scheduling
 
-`ClawLoopScheduler.IntervalToCron()` converts user-friendly formats to 6-field cron:
+`ScheduleIntervalLoopAsync()` accepts whole seconds, minutes, or hours from 60 seconds through 365 days. The first run is due one full interval after registration. Subsequent due times remain anchored to that registration, including across hour and day boundaries.
 
-| User Input | Cron Expression | Meaning |
-|------------|-----------------|---------|
-| `5m` | `*/5 * * * *` | Every 5 minutes |
-| `30s` | `*/30 * * * * *` | 30-second cron expression; dispatch is observed by minute-based polling |
-| `120s` | `*/2 * * * *` | Every 120s = every 2 minutes |
-| `1h` | `0 */1 * * *` | Every hour (on the hour) |
+| User input | Elapsed time between due runs |
+| --- | --- |
+| `60s` | 60 seconds |
+| `90s` | 90 seconds |
+| `45m` | 45 minutes |
+| `90m` | 90 minutes |
+| `25h` | 25 hours |
+
+The hosted dispatcher polls every second. Dispatch can be later under load. A late poll dispatches once and skips missed occurrences while preserving cadence. It does not emit a burst of catch-up runs. Active loops remain in memory and do not survive restart.
+
+Explicit cron callers can still use `ScheduleLoopAsync()`. The legacy `IntervalToCron()` helper rejects durations that cannot be represented exactly instead of silently rounding them. Chat `/loop` uses duration scheduling directly.
 
 ### Retry & Failure Handling
 
-TickerQ job-level retries are not implemented at this layer—exceptions during `AgentLoopJob` dispatch are caught and logged as errors, not thrown to TickerQ. A single dispatch failure does not affect the next tick. Design philosophy: loops are heartbeat mechanisms; missing one beat should not cascade.
+Job-level retries are not implemented at this layer. Exceptions during `AgentLoopJob` dispatch are caught and logged so a single dispatch failure does not stop the hosted worker or affect the next tick.
 
 ---
 
@@ -303,7 +302,7 @@ System: Loop started — interval: 5m, prompt: "check latest CI build status"
 
 User: /loop status
 
-System: Loop active — cron: */5 * * * *, prompt: "check latest CI build status", scheduled at: 2026-06-20T14:35:00.0000000Z
+System: Loop active — interval: 00:05:00, prompt: "check latest CI build status", scheduled at: 2026-06-20T14:35:00.0000000Z
 
 User: /loop cancel
 
@@ -344,6 +343,7 @@ services.AddSingleton<ClawLoopScheduler>();
 services.AddSingleton<ILoopControlService>(sp => sp.GetRequiredService<ClawLoopScheduler>());
 services.AddSingleton<LoopTerminationDetector>();
 services.AddSingleton<AgentLoopJob>();
+services.AddHostedService(sp => sp.GetRequiredService<AgentLoopJob>());
 
 // Loop control tool (registered alongside other ITool implementations)
 services.AddSingleton<ITool, LoopControlTool>();
@@ -369,9 +369,9 @@ services.CommandProcessor.SetLoopCallback(async (session, text, ct) =>
 });
 ```
 
-### AgentLoopJob Discovery
+### AgentLoopJob Hosting
 
-TickerQ automatically discovers classes annotated with `[TickerFunction]` via the DI container. Once `AgentLoopJob` is registered as a singleton, TickerQ scans it at startup and starts the cron timer on its `ExecuteAsync` method.
+`AgentLoopJob` is registered as both a singleton and an `IHostedService`, so the host starts one worker instance and reuses that instance for focused tests and service access.
 
 ---
 
@@ -385,7 +385,7 @@ TickerQ automatically discovers classes annotated with `[TickerFunction]` via th
 | User rapidly issues multiple `/loop` | Last one wins. Response notes the interval change |
 | `/loop` used while `/goal` is active | Allowed; both operate independently |
 | `loop_control` tool denied by approval | Tool returns error; loop does not terminate |
-| Interval is 0 or has invalid unit | `IntervalToCron()` throws `ArgumentException`; callback catches and echoes `Error: ...` |
+| Interval is 0 or has invalid unit | `ParseInterval()` throws `ArgumentException`; callback catches and echoes `Error: ...` |
 
 ### Concurrency Safety
 
@@ -394,23 +394,21 @@ TickerQ automatically discovers classes annotated with `[TickerFunction]` via th
 | `ClawLoopScheduler._entries` | `ConcurrentDictionary<string, LoopEntry>` — thread-safe AddOrUpdate/TryRemove |
 | `LoopEntry.IsDue()` | Intra-entry `_nextOccurrence` compare-and-update is protected by a per-entry lock |
 | Agent layer | `AgentRuntime` already has session locks; only one turn per session at a time |
-| TickerQ | `[TickerFunction]` invokes a minute-based polling job; per-loop state remains in the in-memory registry |
+| Hosted worker | `PeriodicTimer` invokes a one-second polling pass; per-loop state remains in the in-memory registry |
 
 ---
 
 ## 10. OTel Context Cutting
 
-To prevent nested OpenTelemetry span chains across loop iterations (Codex suffered 34 GB/day log inflation from this), `AgentLoopJob.ExecuteAsync` explicitly cuts the context before each execution:
+To prevent nested OpenTelemetry span chains across loop iterations, `AgentLoopJob.DispatchDueAsync` explicitly cuts the context before each polling pass:
 
 ```csharp
-[TickerFunction("AgentLoopExecutor", cronExpression: "* * * * *")]
-public async Task ExecuteAsync(TickerFunctionContext context, CancellationToken ct)
+internal async Task DispatchDueAsync(CancellationToken ct)
 {
     // Cut OTel context to prevent nested span chains across loop iterations
     Activity.Current = null;
 
-    var now = DateTimeOffset.UtcNow;
-    var dueEntries = _scheduler.GetDueEntries(now);
+    var dueEntries = _scheduler.GetDueEntries();
     foreach (var entry in dueEntries)
     {
         await _dispatcher.DispatchAsync(entry.SessionId, entry.Prompt, ct);
@@ -429,7 +427,7 @@ This ensures span depth is always constant for each loop tick, regardless of how
 | Dimension | /loop | /goal |
 |-----------|-------|-------|
 | Trigger | External timer injects prompt | Model auto-continues on stop |
-| Scheduling engine | TickerQ minute polling + in-memory registry | AgentRuntime loop inline |
+| Scheduling engine | Hosted one-second poller + in-memory registry | AgentRuntime loop inline |
 | Lifecycle | Scheduled → Running → Terminated | Active → Paused/Blocked/BudgetLimited → Complete |
 | Model tools | `loop_control` (complete only) | `get_goal`, `create_goal`, `update_goal` |
 | Budget system | None | Token budget + baseline mechanism |
@@ -449,7 +447,7 @@ All new code is designed for AOT compatibility:
 | Component | AOT Safety Check |
 |-----------|-----------------|
 | `LoopCommandParser` | Uses `[GeneratedRegex]` compile-time regex, no runtime `new Regex()` |
-| `AgentLoopJob` | `[TickerFunction]` handled by TickerQ Source Generator at compile time |
+| `AgentLoopJob` | Direct `BackgroundService` registration; no runtime discovery or reflection |
 | `AgentLoopRequestPayload` | Uses `System.Text.Json` + `[JsonPropertyName]` source generation |
 | `LoopTerminationDetector` | `FrozenSet<string>` is an AOT-safe compile-time collection |
 | `LoopControlTool` | Implements `IToolWithContext` interface (no reflection-based registration; explicit DI `AddSingleton`) |
@@ -465,16 +463,14 @@ No `dynamic`, no `MakeGenericType`, no unannotated `[RequiresUnreferencedCode]`.
 | Component Under Test | Test File | Verification Points |
 |---------------------|-----------|---------------------|
 | `LoopCommandParser` | `LoopCommandParserTests.cs` | Valid schedule parsing (including Chinese prompts); cancel/stop/status exact matches; invalid input returns Invalid; non-loop commands return null |
-| `ClawLoopScheduler` | `ClawLoopSchedulerTests.cs` | Schedule → entry exists; seconds cron parses; invalid cron is normalized to `ArgumentException`; Cancel → entry removed; SignalComplete → cancels via explicit interface; idempotent override; due polling; concurrent `IsDue` access |
+| `ClawLoopScheduler` | `ClawLoopSchedulerTests.cs` | Schedule → entry exists; invalid cron is normalized to `ArgumentException`; Cancel → entry removed; SignalComplete → cancels via explicit interface; idempotent override; due polling; concurrent `IsDue` access |
+| Interval scheduling | `LoopIntervalTests.cs` | 60-second minimum; exact elapsed cadence; late-tick handling without drift or catch-up bursts; overflow and invalid input rejection |
 | `LoopTerminationDetector` | `LoopControlToolTests.cs` | Whole-keyword hit triggers SignalComplete; substrings do not trigger; empty/null text returns false; OnToolComplete triggers SignalComplete |
 | `LoopControlTool` | `LoopControlToolTests.cs` | `status="complete"` correctly forwarded; invalid status returns error; no session context returns error; tool metadata verification |
 
-### Test Statistics
-
-- **Test files:** 3
-- **Test methods:** 62 (including inherited matches from Goal-related naming)
-- **Pass rate:** 100%
-- **Mock framework:** NSubstitute
+The loop tests run as part of the standard `OpenClaw.Tests` suite. Focused behavior
+changes should add regression coverage there and remain compatible with the
+repository's NativeAOT validation lane.
 
 ---
 
@@ -483,7 +479,7 @@ No `dynamic`, no `MakeGenericType`, no unannotated `[RequiresUnreferencedCode]`.
 ### Approval Pause Protocol (Phase 2)
 
 When a loop turn triggers an approval block (`ToolApprovalCallback` returns false or waits for human decision):
-- Leverage TickerQ job pause/resume capabilities
+- Add explicit pause/resume state to the in-memory loop registry
 - Auto-resume loop upon approval
 - Solve the Codex-class "token burning" problem (retrying approval requests repeatedly while unattended)
 
@@ -497,4 +493,4 @@ Expose HTTP endpoints for programmatic loop management by external systems:
 
 ### Persistence Enhancement
 
-Currently loop entries are stored in an in-memory `ConcurrentDictionary`, lost on restart. TickerQ itself supports EF Core persistence—serializing `LoopEntry` into TickerQ database tables would enable true cross-restart persistence.
+Currently loop entries are stored in an in-memory `ConcurrentDictionary` and are lost on restart. A future durable store could persist `LoopEntry` state and restore its next occurrence during startup.

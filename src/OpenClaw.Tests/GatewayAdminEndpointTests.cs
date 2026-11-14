@@ -8999,6 +8999,7 @@ public sealed partial class GatewayAdminEndpointTests
         builder.Services.AddSingleton(heartbeatService);
         builder.Services.AddSingleton(startup);
         builder.Services.AddSingleton(new RuntimeMetrics());
+        builder.Services.AddSingleton(new MediaCacheStore(Path.Join(storagePath, "media")));
         builder.Services.AddSingleton(new BrowserSessionAuthService(config));
         builder.Services.AddSingleton(new OperatorAccountService(
             storagePath,

@@ -1180,6 +1180,7 @@
 						<Border Grid.Row="1" Grid.Column="1" Classes="section-card">
 							<StackPanel Spacing="8">
 								<TextBlock Text="Execute / Status" Classes="section-title" />
+								<TextBox Text="{Binding MachinePaymentReference}" AutomationProperties.Name="Payment reference" PlaceholderText="Payment reference (reuse for retries)" />
 								<TextBox Text="{Binding MachinePaymentMerchantName}" AutomationProperties.Name="Merchant name" PlaceholderText="Merchant name" />
 								<Grid ColumnDefinitions="*,*">
 									<TextBox Text="{Binding MachinePaymentAmountMinor}" AutomationProperties.Name="Amount minor" PlaceholderText="Amount minor" />

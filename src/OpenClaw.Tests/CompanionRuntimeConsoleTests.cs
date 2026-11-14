@@ -51,6 +51,16 @@ public sealed class CompanionRuntimeConsoleTests : IDisposable
     }
 
     [Fact]
+    public async Task ExecuteMachinePaymentCommand_WhenReferenceMissing_ShouldRejectBeforeConfirmationOrNetwork()
+    {
+        var viewModel = CreateViewModel((_, _) => throw new InvalidOperationException("Must not use network"));
+        viewModel.MachinePaymentAmountMinor = "50";
+        await viewModel.ExecuteMachinePaymentCommand.ExecuteAsync(null);
+        Assert.Contains("payment reference", viewModel.PaymentsStatus);
+        Assert.Equal("", viewModel.PaymentResultText);
+    }
+
+    [Fact]
     public async Task AutomationDeleteCommand_RequiresConfirmationBeforeClientUse()
     {
         var viewModel = CreateViewModel();

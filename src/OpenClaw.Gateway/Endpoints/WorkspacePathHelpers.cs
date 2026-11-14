@@ -10,8 +10,8 @@ internal static class WorkspacePathHelpers
     /// <summary>
     /// Returns <c>true</c> when <paramref name="path"/> is the directory itself or a
     /// descendant of it.  Uses case-sensitive comparison on case-sensitive file systems
-    /// (Linux) and case-insensitive comparison on case-insensitive file systems
-    /// (Windows/macOS) so that symlink-resolved paths are compared correctly on every OS.
+    /// (Unix) and case-insensitive comparison on case-insensitive file systems
+    /// (Windows) so that symlink-resolved paths are compared correctly on every OS.
     /// </summary>
     internal static bool IsInsideDirectory(string path, string directory)
     {
@@ -27,56 +27,25 @@ internal static class WorkspacePathHelpers
                    comparison);
     }
 
-    /// <summary>
-    /// Walks each component of <paramref name="path"/> and resolves any symlink or
-    /// junction targets so that containment checks operate on the real filesystem path.
-    /// Non-existent components are kept as-is (they cannot be links).
-    /// Link resolution is best-effort: on failure (permissions, broken reparse point,
-    /// unsupported FS) the logical <paramref name="path"/> component is kept.
-    /// </summary>
-    internal static string ResolveRealPath(string path)
+    // The configured root is trusted. Refuse links below it, including dangling links,
+    // because opening them for creation can write outside the workspace.
+    internal static bool IsSafeWorkspacePath(string path, string root)
     {
-        var root = Path.GetPathRoot(path) ?? string.Empty;
-        var remaining = path[root.Length..];
-        var parts = remaining.Split(
-            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
-            StringSplitOptions.RemoveEmptyEntries);
+        if (!IsInsideDirectory(path, root))
+            return false;
 
-        var resolved = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var relative = Path.GetRelativePath(root, path);
+        if (relative == ".")
+            return true;
 
-        foreach (var candidate in parts.Select(part => resolved + Path.DirectorySeparatorChar + part))
+        var current = root;
+        foreach (var component in relative.Split(Path.DirectorySeparatorChar))
         {
-            if (Directory.Exists(candidate))
-            {
-                try
-                {
-                    var target = new DirectoryInfo(candidate).ResolveLinkTarget(returnFinalTarget: true);
-                    resolved = target?.FullName ?? candidate;
-                }
-                catch
-                {
-                    resolved = candidate;
-                }
-            }
-            else if (File.Exists(candidate))
-            {
-                try
-                {
-                    var target = new FileInfo(candidate).ResolveLinkTarget(returnFinalTarget: true);
-                    resolved = target?.FullName ?? candidate;
-                }
-                catch
-                {
-                    resolved = candidate;
-                }
-            }
-            else
-            {
-                // Component does not exist yet — keep the logical path.
-                resolved = candidate;
-            }
+            current = Path.Join(current, component);
+            if (new FileInfo(current).LinkTarget is not null)
+                return false;
         }
 
-        return resolved;
+        return true;
     }
 }

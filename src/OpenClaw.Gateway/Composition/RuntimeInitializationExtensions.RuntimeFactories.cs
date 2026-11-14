@@ -39,7 +39,8 @@ internal static partial class RuntimeInitializationExtensions
             startup.WorkspacePath,
             app.Services.GetRequiredService<ILogger<McpWorkspaceWatcherService>>(),
             app.Services.GetRequiredService<McpConfigStore>(),
-            app.Services.GetRequiredService<CapabilityBindingCache>());
+            app.Services.GetRequiredService<CapabilityBindingCache>(),
+            enabled: startup.Config.Plugins.Mcp.Enabled);
         app.Services.GetRequiredService<McpWatcherHolder>().Watcher = watcher;
         watcher.Start(app.Lifetime.ApplicationStopping);
         return watcher;

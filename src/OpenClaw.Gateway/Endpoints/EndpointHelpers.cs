@@ -306,10 +306,11 @@ internal static class EndpointHelpers
         BrowserSessionAuthService browserSessions,
         RuntimeOperationsState operations,
         bool requireCsrf,
-        string endpointScope)
+        string endpointScope,
+        string? rateLimitScope = null)
     {
         var auth = AuthorizeOperatorRequest(ctx, startup, browserSessions, requireCsrf);
-        return AuthorizeOperatorEndpoint(ctx, operations, auth, requireCsrf, endpointScope);
+        return AuthorizeOperatorEndpoint(ctx, operations, auth, requireCsrf, endpointScope, rateLimitScope);
     }
 
     public static (OperatorAuthorizationResult? Authorization, IResult? Failure) AuthorizeOperatorEndpoint(
@@ -317,7 +318,8 @@ internal static class EndpointHelpers
         RuntimeOperationsState operations,
         OperatorAuthorizationResult auth,
         bool requireCsrf,
-        string endpointScope)
+        string endpointScope,
+        string? rateLimitScope = null)
     {
         if (!auth.IsAuthorized)
             return (null, Results.Unauthorized());
@@ -340,7 +342,7 @@ internal static class EndpointHelpers
                 statusCode: StatusCodes.Status403Forbidden));
         }
 
-        if (!TryConsumeOperatorRateLimit(ctx, operations, auth, endpointScope, out var blockedByPolicyId))
+        if (!TryConsumeOperatorRateLimit(ctx, operations, auth, rateLimitScope ?? endpointScope, out var blockedByPolicyId))
         {
             return (null, Results.Json(
                 new OperationStatusResponse
@@ -499,6 +501,8 @@ internal static class EndpointHelpers
         var scope = endpointScope.Trim().ToLowerInvariant();
 
         if (scope.StartsWith("admin.operator-accounts", StringComparison.Ordinal) ||
+            scope.StartsWith("admin.workspace.", StringComparison.Ordinal) ||
+            scope.StartsWith("admin.channels.config", StringComparison.Ordinal) ||
             scope.StartsWith("admin.organization-policy", StringComparison.Ordinal) ||
             scope.StartsWith("admin.settings.mutate", StringComparison.Ordinal) ||
             scope.StartsWith("admin.setup.mutate", StringComparison.Ordinal) ||

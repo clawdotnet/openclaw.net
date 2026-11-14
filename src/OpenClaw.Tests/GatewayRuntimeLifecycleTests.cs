@@ -53,6 +53,31 @@ public sealed class GatewayRuntimeLifecycleTests
     }
 
     [Fact]
+    public async Task McpWorkspaceWatcherService_WhenDisabled_ShouldIgnorePersistedConfigurationAndReloads()
+    {
+        var root = CreateTempRoot();
+        Directory.CreateDirectory(root);
+        try
+        {
+            await using var registry = new McpServerToolRegistry(new McpPluginsConfig { Enabled = false },
+                NullLogger<McpServerToolRegistry>.Instance);
+            var runtime = Substitute.For<IAgentRuntime>();
+            var store = new McpConfigStore(root, NullLogger<McpConfigStore>.Instance);
+            await store.SaveAsync("""{"enabled":true,"servers":{}}""", TestContext.Current.CancellationToken);
+            await using var service = new McpWorkspaceWatcherService(registry, runtime, root,
+                NullLogger<McpWorkspaceWatcherService>.Instance, store, new CapabilityBindingCache(), enabled: false);
+            service.Start(TestContext.Current.CancellationToken);
+            service.TriggerReload();
+            await service.DisposeAsync();
+            Assert.Empty(runtime.ReceivedCalls());
+        }
+        finally
+        {
+            DeleteDirectoryIfPresent(root);
+        }
+    }
+
+    [Fact]
     public async Task McpWorkspaceWatcherService_TriggerReload_AppliesToolChanges()
     {
         var root = CreateTempRoot();

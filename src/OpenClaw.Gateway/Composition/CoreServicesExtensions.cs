@@ -68,7 +68,8 @@ internal static class CoreServicesExtensions
             denyLiveWithoutApprovalService: config.Payments.Policy.DenyLiveWithoutApprovalService,
             maxLiveAmountMinor: config.Payments.Policy.MaxLiveAmountMinor,
             mockProviderId: config.Payments.Mock.ProviderId,
-            mockFundingDisplay: config.Payments.Mock.FundingSourceDisplayName);
+            mockFundingDisplay: config.Payments.Mock.FundingSourceDisplayName,
+            idempotencyStoragePath: Path.Join(config.Memory.StoragePath, "payment-idempotency"));
         if (string.Equals(config.Payments.Provider, "stripe-link", StringComparison.OrdinalIgnoreCase))
         {
             services.AddSingleton<ILinkCliCommandRunner, LinkCliProcessRunner>();
@@ -217,6 +218,7 @@ internal static class CoreServicesExtensions
         services.AddSingleton<LoopTerminationDetector>();
         services.AddSingleton<IAgentLoopDispatcher, GatewayAgentLoopDispatcher>();
         services.AddSingleton<AgentLoopJob>();
+        services.AddHostedService(sp => sp.GetRequiredService<AgentLoopJob>());
         services.AddSingleton<AutomationRunCoordinator>();
         services.AddSingleton<IAutomationRunDispatcher>(sp => sp.GetRequiredService<AutomationRunCoordinator>());
         services.AddSingleton<GatewayAutomationService>();

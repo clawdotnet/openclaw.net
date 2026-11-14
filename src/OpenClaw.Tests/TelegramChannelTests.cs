@@ -59,7 +59,7 @@ public sealed class TelegramChannelTests
         using var http = new HttpClient(new CallbackHandler(_ =>
         {
             called = true;
-            return new HttpResponseMessage(HttpStatusCode.OK);
+            return JsonResponse("""{"ok":true,"result":{"message_id":1}}""");
         }));
 
         await using var channel = new TelegramChannel(
@@ -385,7 +385,7 @@ public sealed class TelegramChannelTests
         using var http = new HttpClient(new CallbackHandler(request =>
         {
             requests.Add((request.RequestUri!.ToString(), request.Content!.ReadAsStringAsync().GetAwaiter().GetResult()));
-            return new HttpResponseMessage(HttpStatusCode.OK);
+            return JsonResponse("""{"ok":true,"result":{"message_id":1}}""");
         }));
 
         await using var channel = new TelegramChannel(
@@ -425,7 +425,7 @@ public sealed class TelegramChannelTests
         using var http = new HttpClient(new CallbackHandler(request =>
         {
             requests.Add((request.RequestUri!.ToString(), request.Content!.ReadAsStringAsync().GetAwaiter().GetResult()));
-            return new HttpResponseMessage(HttpStatusCode.OK);
+            return JsonResponse("""{"ok":true,"result":{"message_id":1}}""");
         }));
 
         await using var channel = new TelegramChannel(
@@ -469,7 +469,7 @@ public sealed class TelegramChannelTests
         using var http = new HttpClient(new CallbackHandler(request =>
         {
             requests.Add((request.RequestUri!.ToString(), request.Content!.ReadAsStringAsync().GetAwaiter().GetResult()));
-            return new HttpResponseMessage(HttpStatusCode.OK);
+            return JsonResponse("""{"ok":true,"result":{"message_id":1}}""");
         }));
 
         await using var channel = new TelegramChannel(
@@ -509,7 +509,7 @@ public sealed class TelegramChannelTests
         using var http = new HttpClient(new CallbackHandler(_ =>
         {
             called = true;
-            return new HttpResponseMessage(HttpStatusCode.OK);
+            return JsonResponse("""{"ok":true,"result":{"message_id":1}}""");
         }));
 
         await using var channel = new TelegramChannel(
@@ -521,14 +521,14 @@ public sealed class TelegramChannelTests
             NullLogger<TelegramChannel>.Instance,
             http);
 
-        await channel.SendAsync(
+        await Assert.ThrowsAsync<OpenClaw.Core.Abstractions.ChannelDeliveryException>(async () => await channel.SendAsync(
             new OutboundMessage
             {
                 ChannelId = "telegram",
                 RecipientId = "openclaw_updates",
                 Text = "hello"
             },
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken));
 
         Assert.False(called);
     }

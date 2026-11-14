@@ -13,7 +13,10 @@ public interface IChannelAdapter : IAsyncDisposable
     /// <summary>Start listening for inbound messages.</summary>
     Task StartAsync(CancellationToken ct);
     
-    /// <summary>Send a message through this channel.</summary>
+    /// <summary>
+    /// Send a message through this channel. Return only after successful delivery.
+    /// Throw ChannelDeliveryException for rejected, partial, or uncertain sends to control safe retries.
+    /// </summary>
     ValueTask SendAsync(OutboundMessage message, CancellationToken ct);
     
     /// <summary>Event raised when a message arrives from this channel.</summary>

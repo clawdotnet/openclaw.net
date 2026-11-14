@@ -43,6 +43,7 @@ public sealed class PaymentTool : IToolWithContext
             "payment_id": { "type": "string" },
             "resource_url": { "type": "string" },
             "challenge_id": { "type": "string" },
+            "idempotency_key": { "type": "string", "description": "Required for execute_machine_payment. Reuse the same key and request on retries." },
             "protocol": { "type": "string" }
           },
           "required": ["action"]
@@ -68,6 +69,7 @@ public sealed class PaymentTool : IToolWithContext
             var provider = ReadString(root, "provider") ?? _defaultProviderId;
             var executionContext = new PaymentExecutionContext
             {
+                CallerId = context?.Session.OwnerAccountId ?? context?.Session.AuthenticatedUserId,
                 SessionId = context?.Session.Id,
                 ChannelId = context?.Session.ChannelId,
                 SenderId = context?.Session.SenderId,
@@ -84,6 +86,10 @@ public sealed class PaymentTool : IToolWithContext
                 PaymentActions.GetPaymentStatus => Serialize(await _runtime.GetPaymentStatusAsync(ReadRequiredString(root, "payment_id"), provider, executionContext, ct), PaymentJsonContext.Default.PaymentStatus),
                 _ => Error($"Unsupported payment action '{action}'.")
             };
+        }
+        catch (PaymentIdempotencyException ex)
+        {
+            return Error(ex.Message, ex.Code);
         }
         catch (PaymentPolicyDeniedException ex)
         {
@@ -122,6 +128,7 @@ public sealed class PaymentTool : IToolWithContext
         var merchant = ReadString(root, "merchant");
         return new MachinePaymentRequest
         {
+            IdempotencyKey = ReadString(root, "idempotency_key"),
             ProviderId = provider,
             Environment = environment,
             FundingSourceId = ReadString(root, "funding_source_id"),

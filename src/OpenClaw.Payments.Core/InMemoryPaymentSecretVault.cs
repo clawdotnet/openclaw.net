@@ -42,13 +42,13 @@ public sealed class InMemoryPaymentSecretVault : IPaymentSecretVault
 
         if (entry.ExpiresAtUtc <= DateTimeOffset.UtcNow)
         {
-            if (_entries.TryRemove(handleId, out var removed))
-                removed.Secret.Clear();
+            if (_entries.TryRemove(new KeyValuePair<string, Entry>(handleId, entry)))
+                entry.Secret.Clear();
             return ValueTask.FromResult<PaymentSecret?>(null);
         }
 
-        if (entry.RetrieveOnce && _entries.TryRemove(handleId, out var oneTime))
-            return ValueTask.FromResult<PaymentSecret?>(oneTime.Secret);
+        if (entry.RetrieveOnce && !_entries.TryRemove(new KeyValuePair<string, Entry>(handleId, entry)))
+            return ValueTask.FromResult<PaymentSecret?>(null);
 
         return ValueTask.FromResult<PaymentSecret?>(entry.Secret);
     }
@@ -65,8 +65,8 @@ public sealed class InMemoryPaymentSecretVault : IPaymentSecretVault
     {
         foreach (var item in _entries.Where(item => item.Value.ExpiresAtUtc <= nowUtc))
         {
-            if (_entries.TryRemove(item.Key, out var removed))
-                removed.Secret.Clear();
+            if (_entries.TryRemove(item))
+                item.Value.Secret.Clear();
         }
     }
 }

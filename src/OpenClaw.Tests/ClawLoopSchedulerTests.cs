@@ -67,7 +67,6 @@ public sealed class ClawLoopSchedulerTests
 
     [Theory]
     [InlineData("5m", "*/5 * * * *")]
-    [InlineData("30s", "*/30 * * * * *")]
     [InlineData("120s", "*/2 * * * *")]
     [InlineData("1h", "0 */1 * * *")]
     public void IntervalToCron_ConvertsCorrectly(string interval, string expectedCron)
@@ -83,18 +82,6 @@ public sealed class ClawLoopSchedulerTests
     public void IntervalToCron_Invalid_Throws(string interval)
     {
         Assert.Throws<ArgumentException>(() => ClawLoopScheduler.IntervalToCron(interval));
-    }
-
-    [Fact]
-    public async Task ScheduleLoop_SecondsCronExpression_DoesNotThrow()
-    {
-        var scheduler = new ClawLoopScheduler(_mockLogger);
-
-        await scheduler.ScheduleLoopAsync("s1", "*/30 * * * * *", "check status", TestContext.Current.CancellationToken);
-
-        var status = await scheduler.GetLoopStatusAsync("s1", TestContext.Current.CancellationToken);
-        Assert.NotNull(status);
-        Assert.Contains("*/30 * * * * *", status);
     }
 
     [Fact]

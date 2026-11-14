@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using OpenClaw.Gateway.Bootstrap;
+using OpenClaw.Gateway.Composition;
 
 namespace OpenClaw.Gateway.Endpoints;
 
@@ -9,14 +10,20 @@ internal static class MediaEndpoints
 
     internal static void MapOpenClawMediaEndpoints(
         this WebApplication app,
-        GatewayStartupContext startup)
+        GatewayStartupContext startup,
+        GatewayAppRuntime runtime)
     {
+        var browserSessions = app.Services.GetRequiredService<BrowserSessionAuthService>();
+
         // POST /media/upload — accepts multipart/form-data with a single "file" field.
         // Returns { id, url, fileName, mimeType, sizeBytes }.
         app.MapPost("/media/upload", async (HttpContext ctx, MediaCacheStore mediaCache, CancellationToken ct) =>
         {
-            if (!EndpointHelpers.IsAuthorizedRequest(ctx, startup.Config, startup.IsNonLoopbackBind))
-                return Results.StatusCode(401);
+            var access = EndpointHelpers.AuthorizeOperatorEndpoint(ctx, startup,
+                browserSessions, runtime.Operations,
+                requireCsrf: true, endpointScope: "integration.mutate.media.upload");
+            if (access.Failure is not null)
+                return access.Failure;
 
             EndpointHelpers.TrySetMaxRequestBodySize(ctx, MaxUploadBytes);
 
@@ -76,9 +83,13 @@ internal static class MediaEndpoints
 
             // Use inline disposition for media types the browser renders natively;
             // everything else (HTML, code, archives, etc.) uses attachment so the browser downloads instead.
-            var isInline = asset.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+            var isInline = asset.MediaType.ToLowerInvariant() is "image/jpeg" or "image/png" or "image/gif" or "image/webp" or "image/avif" or "image/bmp"
                 || asset.MediaType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase)
                 || asset.MediaType.StartsWith("video/", StringComparison.OrdinalIgnoreCase);
+            // A direct navigation to active image content (including SVG) must be isolated
+            // from the gateway origin, even when a caller supplied its MIME type.
+            ctx.Response.Headers.ContentSecurityPolicy = "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'";
+            ctx.Response.Headers.XContentTypeOptions = "nosniff";
             var disposition = isInline ? "inline" : "attachment";
             ctx.Response.Headers.ContentDisposition = $"{disposition}; filename=\"{Uri.EscapeDataString(asset.FileName)}\"";
             return Results.File(asset.Path, asset.MediaType, enableRangeProcessing: true);

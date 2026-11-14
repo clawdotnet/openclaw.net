@@ -30,8 +30,7 @@ internal static partial class RuntimeInitializationExtensions
     {
         try
         {
-            var cron = ClawLoopScheduler.IntervalToCron(interval);
-            await scheduler.ScheduleLoopAsync(sessionId, cron, prompt, ct);
+            await scheduler.ScheduleIntervalLoopAsync(sessionId, interval, prompt, ct);
             return $"Loop started — interval: {interval}, prompt: \"{prompt}\"";
         }
         catch (ArgumentException ex)

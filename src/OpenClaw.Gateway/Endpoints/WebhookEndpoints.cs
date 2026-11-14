@@ -49,13 +49,6 @@ internal static class WebhookEndpoints
                 var deliveryKey = dict.TryGetValue("MessageSid", out var messageSid) && !string.IsNullOrWhiteSpace(messageSid)
                     ? messageSid
                     : WebhookDeliveryStore.HashDeliveryKey(bodyText);
-                if (!deliveries.TryBegin("twilio", deliveryKey, TimeSpan.FromHours(6)))
-                {
-                    ctx.Response.StatusCode = StatusCodes.Status200OK;
-                    await ctx.Response.WriteAsync("Duplicate ignored.", ctx.RequestAborted);
-                    return;
-                }
-
                 var sig = ctx.Request.Headers["X-Twilio-Signature"].ToString();
                 InboundMessage? replayMessage = null;
 
@@ -69,7 +62,8 @@ internal static class WebhookEndpoints
                             replayMessage = msg;
                             return runtime.Pipeline.InboundWriter.WriteAsync(msg, ct);
                         },
-                        ctx.RequestAborted);
+                        ctx.RequestAborted,
+                        () => deliveries.TryBegin("twilio", deliveryKey, TimeSpan.FromHours(6)));
 
                     ctx.Response.StatusCode = response.StatusCode;
                     if (response.Body is not null)
@@ -214,13 +208,6 @@ internal static class WebhookEndpoints
 
                     bodyText = requestBodyText;
                     ctx.Request.Body.Position = 0;
-                    var deliveryKey = TryResolveWhatsAppDeliveryKey(bodyText);
-                    if (!deliveries.TryBegin("whatsapp", deliveryKey, TimeSpan.FromHours(6)))
-                    {
-                        ctx.Response.StatusCode = StatusCodes.Status200OK;
-                        await ctx.Response.WriteAsync("Duplicate ignored.", ctx.RequestAborted);
-                        return;
-                    }
                 }
 
                 InboundMessage? replayMessage = null;
@@ -233,7 +220,8 @@ internal static class WebhookEndpoints
                             replayMessage = msg;
                             return runtime.Pipeline.InboundWriter.WriteAsync(msg, ct);
                         },
-                        ctx.RequestAborted);
+                        ctx.RequestAborted,
+                        () => deliveries.TryBegin("whatsapp", TryResolveWhatsAppDeliveryKey(bodyText), TimeSpan.FromHours(6)));
 
                     ctx.Response.StatusCode = response.StatusCode;
                     if (response.Body is not null)
@@ -395,17 +383,6 @@ internal static class WebhookEndpoints
                 var timestamp = ctx.Request.Headers["X-Slack-Request-Timestamp"].ToString();
                 var signature = ctx.Request.Headers["X-Slack-Signature"].ToString();
 
-                // Check for url_verification before dedup (challenge must always respond)
-                if (bodyText.Contains("\"url_verification\"", StringComparison.Ordinal))
-                {
-                    var result = await slackHandler.HandleEventAsync(bodyText, timestamp, signature, (_, _) => ValueTask.CompletedTask, ctx.RequestAborted);
-                    ctx.Response.StatusCode = result.StatusCode;
-                    ctx.Response.ContentType = result.ContentType;
-                    if (result.Body is not null)
-                        await ctx.Response.WriteAsync(result.Body, ctx.RequestAborted);
-                    return;
-                }
-
                 // Use event_id from payload for stable dedup (falls back to timestamp+prefix)
                 string deliveryKey;
                 try
@@ -423,13 +400,6 @@ internal static class WebhookEndpoints
                     deliveryKey = timestamp + ":" + (bodyText.Length > 64 ? bodyText[..64] : bodyText);
                 }
                 var hashedKey = WebhookDeliveryStore.HashDeliveryKey(deliveryKey);
-                if (!deliveries.TryBegin("slack", hashedKey, TimeSpan.FromHours(6)))
-                {
-                    ctx.Response.StatusCode = StatusCodes.Status200OK;
-                    await ctx.Response.WriteAsync("Duplicate ignored.", ctx.RequestAborted);
-                    return;
-                }
-
                 InboundMessage? replayMessage = null;
                 try
                 {
@@ -442,7 +412,8 @@ internal static class WebhookEndpoints
                             replayMessage = msg;
                             return runtime.Pipeline.InboundWriter.WriteAsync(msg, ct);
                         },
-                        ctx.RequestAborted);
+                        ctx.RequestAborted,
+                        () => deliveries.TryBegin("slack", hashedKey, TimeSpan.FromHours(6)));
 
                     ctx.Response.StatusCode = result.StatusCode;
                     ctx.Response.ContentType = result.ContentType;
@@ -563,19 +534,6 @@ internal static class WebhookEndpoints
                     ? body[..hookCfg.MaxBodyLength]
                     : body;
 
-                var headerKey = ctx.Request.Headers["Idempotency-Key"].ToString();
-                if (string.IsNullOrWhiteSpace(headerKey))
-                    headerKey = ctx.Request.Headers["X-OpenClaw-Delivery-Id"].ToString();
-                var deliveryKey = string.IsNullOrWhiteSpace(headerKey)
-                    ? WebhookDeliveryStore.HashDeliveryKey($"{name}:{body}")
-                    : headerKey;
-                if (!deliveries.TryBegin($"webhook:{name}", deliveryKey, TimeSpan.FromHours(6)))
-                {
-                    ctx.Response.StatusCode = StatusCodes.Status202Accepted;
-                    await ctx.Response.WriteAsync("Webhook already processed.");
-                    return;
-                }
-
                 if (hookCfg.ValidateHmac)
                 {
                     var secret = SecretResolver.Resolve(hookCfg.Secret);
@@ -591,6 +549,19 @@ internal static class WebhookEndpoints
                         ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
                         return;
                     }
+                }
+
+                var headerKey = ctx.Request.Headers["Idempotency-Key"].ToString();
+                if (string.IsNullOrWhiteSpace(headerKey))
+                    headerKey = ctx.Request.Headers["X-OpenClaw-Delivery-Id"].ToString();
+                var deliveryKey = string.IsNullOrWhiteSpace(headerKey)
+                    ? WebhookDeliveryStore.HashDeliveryKey($"{name}:{body}")
+                    : headerKey;
+                if (!deliveries.TryBegin($"webhook:{name}", deliveryKey, TimeSpan.FromHours(6)))
+                {
+                    ctx.Response.StatusCode = StatusCodes.Status202Accepted;
+                    await ctx.Response.WriteAsync("Webhook already processed.");
+                    return;
                 }
 
                 var prompt = hookCfg.PromptTemplate.Replace("{body}", bodyForPrompt);

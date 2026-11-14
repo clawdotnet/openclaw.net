@@ -35,7 +35,8 @@ internal sealed class WhatsAppWebhookHandler
     public async Task<WebhookResult> HandleAsync(
         HttpContext context,
         Func<InboundMessage, CancellationToken, ValueTask> enqueue,
-        CancellationToken ct)
+        CancellationToken ct,
+        Func<bool>? tryBeginDelivery = null)
     {
         if (!_config.Enabled)
             return WebhookResult.NotFound();
@@ -48,9 +49,9 @@ internal sealed class WhatsAppWebhookHandler
         if (HttpMethods.IsPost(context.Request.Method))
         {
             if (string.Equals(_config.Type, "official", StringComparison.OrdinalIgnoreCase))
-                return await HandleOfficialPostAsync(context, enqueue, ct);
+                return await HandleOfficialPostAsync(context, enqueue, ct, tryBeginDelivery);
             if (string.Equals(_config.Type, "bridge", StringComparison.OrdinalIgnoreCase))
-                return await HandleBridgePostAsync(context, enqueue, ct);
+                return await HandleBridgePostAsync(context, enqueue, ct, tryBeginDelivery);
 
             _logger.LogWarning("WhatsApp webhook invoked for unsupported channel type '{Type}'.", _config.Type);
             return WebhookResult.NotFound();
@@ -80,7 +81,8 @@ internal sealed class WhatsAppWebhookHandler
     private async Task<WebhookResult> HandleOfficialPostAsync(
         HttpContext context,
         Func<InboundMessage, CancellationToken, ValueTask> enqueue,
-        CancellationToken ct)
+        CancellationToken ct,
+        Func<bool>? tryBeginDelivery)
     {
         try
         {
@@ -96,6 +98,9 @@ internal sealed class WhatsAppWebhookHandler
                 WhatsAppJsonContext.Default.WhatsAppInboundPayload);
 
             if (payload?.Entry is null) return WebhookResult.Ok();
+
+            if (tryBeginDelivery is not null && !tryBeginDelivery())
+                return WebhookResult.Ok();
 
             foreach (var entry in payload.Entry)
             {
@@ -169,7 +174,8 @@ internal sealed class WhatsAppWebhookHandler
     private async Task<WebhookResult> HandleBridgePostAsync(
         HttpContext context,
         Func<InboundMessage, CancellationToken, ValueTask> enqueue,
-        CancellationToken ct)
+        CancellationToken ct,
+        Func<bool>? tryBeginDelivery)
     {
         try
         {
@@ -186,6 +192,9 @@ internal sealed class WhatsAppWebhookHandler
 
             if (payload is null || string.IsNullOrWhiteSpace(payload.From))
                 return WebhookResult.BadRequest("Missing From");
+
+            if (tryBeginDelivery is not null && !tryBeginDelivery())
+                return WebhookResult.Ok();
 
             await _recentSenders.RecordAsync("whatsapp", payload.From, payload.SenderName, ct);
 
