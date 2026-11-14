@@ -700,7 +700,7 @@ public sealed class DingTalkChannel : IChannelAdapter, IRestartableChannelAdapte
         request.Content = new StringContent(json, Encoding.UTF8, "application/json");
 
         using var response = await _http.SendAsync(request, ct);
-        ChannelDeliveryHttp.EnsureAccepted(response);
+        await ChannelDeliveryHttp.EnsureAcceptedAsync(response, ct);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
         var root = document.RootElement;
         foreach (var field in new[] { "code", "errcode" })

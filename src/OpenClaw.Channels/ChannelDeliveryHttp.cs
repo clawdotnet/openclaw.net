@@ -13,10 +13,51 @@ internal static class ChannelDeliveryHttp
             return;
         }
 
+        throw CreateFailure(response, retryAfter, detail: null);
+    }
+
+    public static async Task EnsureAcceptedAsync(
+        HttpResponseMessage response,
+        CancellationToken ct,
+        TimeSpan? retryAfter = null)
+    {
+        if (response.IsSuccessStatusCode)
+        {
+            return;
+        }
+
+        string? detail = null;
+        try
+        {
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            detail = GetProviderErrorDetail(document.RootElement);
+        }
+        catch (JsonException)
+        {
+            // Status and retry metadata remain sufficient when the error body is not JSON.
+        }
+        catch (HttpRequestException)
+        {
+            // Status and retry metadata remain sufficient when the error body cannot be read.
+        }
+        catch (IOException)
+        {
+            // Status and retry metadata remain sufficient when the error body cannot be read.
+        }
+
+        throw CreateFailure(response, retryAfter, detail);
+    }
+
+    private static ChannelDeliveryException CreateFailure(
+        HttpResponseMessage response,
+        TimeSpan? retryAfter,
+        string? detail)
+    {
         var rateLimited = response.StatusCode == HttpStatusCode.TooManyRequests;
         var unknown = (int)response.StatusCode >= 500 || response.StatusCode == HttpStatusCode.RequestTimeout;
         retryAfter ??= GetRetryAfter(response);
-        throw new ChannelDeliveryException($"Provider returned HTTP {(int)response.StatusCode}.",
+        var suffix = detail is null ? string.Empty : $" ({detail})";
+        return new ChannelDeliveryException($"Provider returned HTTP {(int)response.StatusCode}{suffix}.",
             rateLimited, outcomeUnknown: unknown, retryAfter: retryAfter);
     }
 
@@ -55,13 +96,35 @@ internal static class ChannelDeliveryHttp
         }
         if (value != 0)
         {
-            var detail = GetProviderErrorDetail(document.RootElement);
+            var detail = GetProviderMessage(document.RootElement);
             var suffix = detail is null ? string.Empty : $", detail={detail}";
             throw new ChannelDeliveryException($"Provider rejected the send ({field}={value}{suffix}).", false);
         }
     }
 
     public static string? GetProviderErrorDetail(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        if (root.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.Object)
+        {
+            return GetProviderErrorDetail(error);
+        }
+
+        var code = GetProviderCode(root);
+        var detail = GetProviderMessage(root);
+        if (detail is not null)
+        {
+            return code is null ? detail : $"code={code}, message={detail}";
+        }
+
+        return code is null ? null : $"code={code}";
+    }
+
+    private static string? GetProviderMessage(JsonElement root)
     {
         foreach (var field in new[] { "error", "message", "msg", "errmsg" })
         {
@@ -76,7 +139,31 @@ internal static class ChannelDeliveryHttp
                 continue;
             }
 
-            return detail.Length <= 256 ? detail : detail[..256];
+            var safeDetail = detail.Length <= 256 ? detail : detail[..256];
+            return safeDetail;
+        }
+
+        return null;
+    }
+
+    private static string? GetProviderCode(JsonElement root)
+    {
+        foreach (var field in new[] { "code", "error_code", "errorCode" })
+        {
+            if (!root.TryGetProperty(field, out var value))
+            {
+                continue;
+            }
+
+            if (value.ValueKind == JsonValueKind.String)
+            {
+                return value.GetString();
+            }
+
+            if (value.ValueKind == JsonValueKind.Number)
+            {
+                return value.GetRawText();
+            }
         }
 
         return null;

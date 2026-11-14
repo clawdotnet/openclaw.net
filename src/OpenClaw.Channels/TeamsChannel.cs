@@ -104,7 +104,7 @@ public sealed class TeamsChannel : IChannelAdapter
             request.Content = JsonContent.Create(activity, TeamsJsonContext.Default.TeamsOutboundActivity);
 
             using var response = await _http.SendAsync(request, ct);
-            ChannelDeliveryHttp.EnsureAccepted(response);
+            await ChannelDeliveryHttp.EnsureAcceptedAsync(response, ct);
             delivery.RecordAccepted();
         }
     }

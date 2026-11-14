@@ -292,6 +292,24 @@ public sealed class ChannelDeliveryContractTests
         Assert.Contains("channel_not_found", error.Message, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("sms", "{\"code\":21610,\"message\":\"recipient opted out\"}", "21610")]
+    [InlineData("teams", "{\"error\":{\"code\":\"BadArgument\",\"message\":\"invalid conversation\"}}", "BadArgument")]
+    [InlineData("whatsapp", "{\"error\":{\"code\":131047,\"message\":\"re-engagement required\"}}", "131047")]
+    public async Task SendAsync_WhenProviderRejectsWithJsonError_ShouldPreserveSafeDiagnostic(
+        string name,
+        string body,
+        string expected)
+    {
+        using var http = Client(_ => Reply(400, body));
+        await using var adapter = Create(name, http);
+
+        var error = await Assert.ThrowsAsync<ChannelDeliveryException>(() => adapter.SendAsync(
+            Message(), TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Contains(expected, error.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void EnsurePreSendAccepted_WhenServerFails_ShouldBeRetryableKnownRejection()
     {

@@ -63,7 +63,7 @@ public sealed class WhatsAppChannel : IChannelAdapter
         request.Content = JsonContent.Create(payload, WhatsAppJsonContext.Default.WhatsAppSendPayload);
 
         using var response = await _http.SendAsync(request, ct);
-        ChannelDeliveryHttp.EnsureAccepted(response);
+        await ChannelDeliveryHttp.EnsureAcceptedAsync(response, ct);
         delivery.RecordAccepted();
         _logger.LogInformation("Sent WhatsApp message to {RecipientId}", outbound.RecipientId);
 

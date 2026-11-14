@@ -45,7 +45,7 @@ internal sealed class TwilioSmsClient
         req.Content = new FormUrlEncodedContent(pairs);
 
         using var res = await _http.SendAsync(req, ct);
-        ChannelDeliveryHttp.EnsureAccepted(res);
+        await ChannelDeliveryHttp.EnsureAcceptedAsync(res, ct);
         return (true, "ok");
     }
 

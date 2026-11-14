@@ -69,7 +69,7 @@ public sealed partial class SlackChannel : IChannelAdapter
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _botToken);
         request.Content = JsonContent.Create(payload, SlackJsonContext.Default.SlackPostMessageRequest);
         using var response = await _http.SendAsync(request, ct);
-        ChannelDeliveryHttp.EnsureAccepted(response);
+        await ChannelDeliveryHttp.EnsureAcceptedAsync(response, ct);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
         if (!doc.RootElement.TryGetProperty("ok", out var ok) || ok.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
             throw new ChannelDeliveryException("Slack acknowledgment is invalid.", false, outcomeUnknown: true);
