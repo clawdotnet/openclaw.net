@@ -11,8 +11,8 @@ namespace OpenClaw.Agent.Plugins;
 /// </summary>
 public sealed class HybridBridgeTransport : IBridgeTransport
 {
-    private readonly StdioBridgeTransport _bootstrap;
-    private readonly SocketBridgeTransport _socket;
+    private readonly IBridgeTransport _bootstrap;
+    private readonly IBridgeTransport _socket;
     private readonly ILogger _logger;
     private Action<BridgeNotification>? _currentHandler;
     private volatile bool _useSocket;
@@ -24,10 +24,16 @@ public sealed class HybridBridgeTransport : IBridgeTransport
         string authToken,
         ILogger logger,
         RuntimeMetrics? metrics = null)
+        : this(new StdioBridgeTransport(logger),
+            new SocketBridgeTransport(socketPath, socketDirectory, ownsSocketDirectory, authToken, logger, metrics), logger)
+    {
+    }
+
+    internal HybridBridgeTransport(IBridgeTransport bootstrap, IBridgeTransport socket, ILogger logger)
     {
         _logger = logger;
-        _bootstrap = new StdioBridgeTransport(logger);
-        _socket = new SocketBridgeTransport(socketPath, socketDirectory, ownsSocketDirectory, authToken, logger, metrics);
+        _bootstrap = bootstrap;
+        _socket = socket;
     }
 
     public Task PrepareAsync(CancellationToken ct)
@@ -74,10 +80,13 @@ public sealed class HybridBridgeTransport : IBridgeTransport
         catch (Exception ex) when (ex is System.IO.IOException or System.Net.Sockets.SocketException
                                     || string.Equals(method, "shutdown", StringComparison.Ordinal))
         {
-            _logger.LogWarning(ex, "Socket transport failed for '{Method}', falling back to stdio", method);
+            _logger.LogWarning(ex, "Socket transport failed for '{Method}'; subsequent requests will use stdio", method);
             _useSocket = false;
             if (_currentHandler is not null)
                 _bootstrap.SetNotificationHandler(_currentHandler);
+            // The socket may have delivered the send before its response was lost.
+            if (string.Equals(method, "channel_send", StringComparison.Ordinal))
+                throw;
             return await _bootstrap.SendAndWaitAsync(method, parameters, ct);
         }
     }

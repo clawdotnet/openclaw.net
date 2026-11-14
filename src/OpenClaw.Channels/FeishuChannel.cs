@@ -61,11 +61,15 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
 
     public FeishuChannel(
         FeishuChannelConfig initialConfig,
-        ILogger<FeishuChannel> logger)
+        ILogger<FeishuChannel> logger) : this(initialConfig, logger, null)
+    {
+    }
+
+    internal FeishuChannel(FeishuChannelConfig initialConfig, ILogger<FeishuChannel> logger, HttpClient? http)
     {
         _initialConfig = initialConfig;
         _logger = logger;
-        _http = HttpClientFactory.Create();
+        _http = http ?? HttpClientFactory.Create();
     }
 
     public string ChannelId => "feishu";
@@ -136,7 +140,9 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
                 if (_receiveLoop is not null)
                 {
                     try { await _receiveLoop; }
-                    catch (OperationCanceledException) { }
+                    catch (OperationCanceledException)
+    {
+    }
                     catch (Exception ex) { _logger.LogDebug(ex, "Feishu receive loop exited with error during restart."); }
                 }
                 _cts.Dispose();
@@ -297,7 +303,9 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
         {
             await heartbeatCts.CancelAsync();
             try { await heartbeatTask; }
-            catch (OperationCanceledException) { }
+            catch (OperationCanceledException)
+    {
+    }
         }
     }
 
@@ -960,42 +968,27 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
 
     // ──────────────────────────── Sending ────────────────────────────────────
 
-    public async ValueTask SendAsync(OutboundMessage outbound, CancellationToken ct)
+    public ValueTask SendAsync(OutboundMessage outbound, CancellationToken ct)
+    {
+        var delivery = new ChannelDeliveryAttempt();
+        return delivery.ExecuteAsync(() => SendCoreAsync(outbound, delivery, ct), ct);
+    }
+
+    private async Task SendCoreAsync(OutboundMessage outbound, ChannelDeliveryAttempt delivery, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(outbound.Text))
-            return;
-
-        try
+            throw new ChannelDeliveryException("Feishu message is empty.", false);
+        await RefreshAppTokenAsync(ct);
+        var (markers, remaining) = MediaMarkerProtocol.Extract(outbound.Text);
+        if (!string.IsNullOrWhiteSpace(remaining))
         {
-            await RefreshAppTokenAsync(ct);
-
-            var (markers, remaining) = MediaMarkerProtocol.Extract(outbound.Text);
-
-            // Send text portion (if any) first
-            if (!string.IsNullOrWhiteSpace(remaining))
-                await SendTextMessageAsync(outbound.RecipientId, remaining, ct);
-
-            // Send each media attachment
-            foreach (var marker in markers)
-            {
-                try
-                {
-                    await SendMarkerAsync(outbound.RecipientId, marker, ct);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to send Feishu media marker {Kind}={Value}.",
-                        marker.Kind, marker.Value);
-                }
-            }
-
-            // No text and no markers — send the full text as-is
-            if (string.IsNullOrWhiteSpace(remaining) && markers.Count == 0)
-                await SendTextMessageAsync(outbound.RecipientId, outbound.Text, ct);
+            await SendTextMessageAsync(outbound.RecipientId, remaining, ct);
+            delivery.RecordAccepted();
         }
-        catch (Exception ex)
+        foreach (var marker in markers)
         {
-            _logger.LogError(ex, "Failed to send Feishu message to {RecipientId}.", outbound.RecipientId);
+            await SendMarkerAsync(outbound.RecipientId, marker, ct);
+            delivery.RecordAccepted();
         }
     }
 
@@ -1018,9 +1011,9 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
             case MediaMarkerKind.ImagePath:
             {
                 var data = await FetchMediaBytesAsync(marker, ct);
-                if (data is null) return;
+                if (data is null) throw new ChannelDeliveryException("Media could not be loaded.", false);
                 var imageKey = await UploadImageAsync(data, ct);
-                if (imageKey is null) return;
+                if (string.IsNullOrWhiteSpace(imageKey)) throw new ChannelDeliveryException("Media upload was rejected.", false);
                 var content = $"{{\"image_key\":{JsonEscapeString(imageKey)}}}";
                 await SendFeishuMessageAsync(recipientId, "image", content, ct);
                 break;
@@ -1030,10 +1023,10 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
             case MediaMarkerKind.FilePath:
             {
                 var data = await FetchMediaBytesAsync(marker, ct);
-                if (data is null) return;
+                if (data is null) throw new ChannelDeliveryException("Media could not be loaded.", false);
                 var name = Path.GetFileName(marker.Value).NullIfEmpty() ?? "file";
                 var fileKey = await UploadFileAsync(data, name, GuessFileType(name), ct);
-                if (fileKey is null) return;
+                if (string.IsNullOrWhiteSpace(fileKey)) throw new ChannelDeliveryException("Media upload was rejected.", false);
                 var content = $"{{\"file_key\":{JsonEscapeString(fileKey)}}}";
                 await SendFeishuMessageAsync(recipientId, "file", content, ct);
                 break;
@@ -1042,10 +1035,10 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
             case MediaMarkerKind.VideoUrl:
             {
                 var data = await FetchMediaBytesAsync(marker, ct);
-                if (data is null) return;
+                if (data is null) throw new ChannelDeliveryException("Media could not be loaded.", false);
                 var name = Path.GetFileName(marker.Value).NullIfEmpty() ?? "video.mp4";
                 var fileKey = await UploadFileAsync(data, name, "mp4", ct);
-                if (fileKey is null) return;
+                if (string.IsNullOrWhiteSpace(fileKey)) throw new ChannelDeliveryException("Media upload was rejected.", false);
                 var content = $"{{\"file_key\":{JsonEscapeString(fileKey)}}}";
                 await SendFeishuMessageAsync(recipientId, "media", content, ct);
                 break;
@@ -1054,16 +1047,17 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
             case MediaMarkerKind.AudioUrl:
             {
                 var data = await FetchMediaBytesAsync(marker, ct);
-                if (data is null) return;
+                if (data is null) throw new ChannelDeliveryException("Media could not be loaded.", false);
                 var name = Path.GetFileName(marker.Value).NullIfEmpty() ?? "audio.opus";
                 var fileKey = await UploadFileAsync(data, name, "opus", ct);
-                if (fileKey is null) return;
+                if (string.IsNullOrWhiteSpace(fileKey)) throw new ChannelDeliveryException("Media upload was rejected.", false);
                 var content = $"{{\"file_key\":{JsonEscapeString(fileKey)}}}";
                 await SendFeishuMessageAsync(recipientId, "audio", content, ct);
                 break;
             }
 
-            // DocumentUrl and StickerUrl not applicable for Feishu — ignore silently
+            default:
+                throw new ChannelDeliveryException("Unsupported Feishu media type.", false);
         }
     }
 
@@ -1089,15 +1083,7 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
         req.Content = new StringContent(body, Encoding.UTF8, "application/json");
 
         using var resp = await _http.SendAsync(req, ct);
-        if (!resp.IsSuccessStatusCode)
-        {
-            var errBody = await resp.Content.ReadAsStringAsync(ct);
-            _logger.LogWarning("Feishu send failed: {Status} {Body}", resp.StatusCode, errBody);
-        }
-        else
-        {
-            _logger.LogInformation("Sent Feishu {MsgType} message to {RecipientId}.", msgType, recipientId);
-        }
+        await ChannelDeliveryHttp.RequireZeroCodeAsync(resp, "code", ct);
     }
 
     // ──────────────────────────── Media upload ────────────────────────────────
@@ -1113,6 +1099,7 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
         req.Content = content;
 
         using var resp = await _http.SendAsync(req, ct);
+        ChannelDeliveryHttp.EnsureAccepted(resp);
         var body = await resp.Content.ReadAsStringAsync(ct);
 
         using var doc = JsonDocument.Parse(body);
@@ -1145,6 +1132,7 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
         req.Content = content;
 
         using var resp = await _http.SendAsync(req, ct);
+        ChannelDeliveryHttp.EnsureAccepted(resp);
         var body = await resp.Content.ReadAsStringAsync(ct);
 
         using var doc = JsonDocument.Parse(body);
@@ -1168,6 +1156,10 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
             return marker.Kind is MediaMarkerKind.ImagePath or MediaMarkerKind.FilePath
                 ? await File.ReadAllBytesAsync(marker.Value, ct)
                 : await _http.GetByteArrayAsync(marker.Value, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -1643,7 +1635,9 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
             if (_receiveLoop is not null)
             {
                 try { await _receiveLoop; }
-                catch (OperationCanceledException) { }
+                catch (OperationCanceledException)
+    {
+    }
                 catch (Exception ex)
                 {
                     _logger.LogDebug(ex, "Feishu receive loop exited during dispose.");

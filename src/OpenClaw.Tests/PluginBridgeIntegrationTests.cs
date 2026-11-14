@@ -320,6 +320,31 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
         Assert.Contains("npm install jiti", report.Error ?? "", StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SendAsync_WhenPluginSendMissingOrThrows_ShouldNotReportAcceptance(bool throws)
+    {
+        if (!HasNode()) return;
+        var send = throws ? "send: async () => { throw new Error('provider failed'); }," : "";
+        var pluginDir = CreatePlugin("failed-channel", "index.js", $$"""
+            module.exports = function(api) {
+              api.registerChannel({ id: "failed-channel", {{send}} start: async () => {}, stop: async () => {} });
+            };
+            """);
+        await using var host = CreateHost(new PluginsConfig
+        {
+            Enabled = true, Load = new PluginLoadConfig { Paths = [pluginDir] }
+        });
+        _ = await host.LoadAsync(null, TestContext.Current.CancellationToken);
+        var adapter = Assert.Single(host.ChannelAdapters);
+        var error = await Assert.ThrowsAsync<OpenClaw.Core.Abstractions.ChannelDeliveryException>(() =>
+            adapter.SendAsync(new OutboundMessage { ChannelId = "failed-channel", RecipientId = "fixture", Text = "hello" },
+                TestContext.Current.CancellationToken).AsTask());
+        Assert.False(error.CanRetry);
+        Assert.True(error.OutcomeUnknown);
+    }
+
     [Fact]
     public async Task LoadAsync_RegisterService_StartsAndStopsService()
     {

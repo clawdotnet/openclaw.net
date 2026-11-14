@@ -72,39 +72,31 @@ public sealed class DiscordChannel : IChannelAdapter
         _receiveLoop = RunGatewayLoopAsync(_cts.Token);
     }
 
-    public async ValueTask SendAsync(OutboundMessage outbound, CancellationToken ct)
+    public ValueTask SendAsync(OutboundMessage outbound, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(outbound.Text)) return;
+        var delivery = new ChannelDeliveryAttempt();
+        return delivery.ExecuteAsync(() => SendCoreAsync(outbound, delivery, ct), ct);
+    }
 
-        try
+    private async Task SendCoreAsync(OutboundMessage outbound, ChannelDeliveryAttempt delivery, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(outbound.Text))
+            throw new ChannelDeliveryException("Discord message is empty.", false);
+        var (markers, remaining) = MediaMarkerProtocol.Extract(outbound.Text);
+        if (markers.Count > 0)
+            throw new ChannelDeliveryException("Discord media delivery is not supported by this adapter.", false);
+        var text = string.IsNullOrWhiteSpace(remaining) ? outbound.Text : remaining;
+        // Preserve all content and account for acceptance of each provider-sized part.
+        for (var offset = 0; offset < text.Length;)
         {
-            var (markers, remaining) = MediaMarkerProtocol.Extract(outbound.Text);
-            var text = string.IsNullOrWhiteSpace(remaining) ? outbound.Text : remaining;
-
-            // Discord message limit is 2000 chars
-            if (text.Length > 2000)
-                text = text[..2000];
-
-            var payload = new DiscordCreateMessageRequest { Content = text };
-            var response = await SendMessageRequestAsync(outbound.RecipientId, payload, ct);
-
-            // Handle rate limiting
-            if ((int)response.StatusCode == 429)
-            {
-                var retryAfter = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(1);
-                _logger.LogWarning("Discord rate limited, retrying after {RetryAfter}ms.", retryAfter.TotalMilliseconds);
-                response.Dispose();
-                await Task.Delay(retryAfter, ct);
-                response = await SendMessageRequestAsync(outbound.RecipientId, payload, ct);
-            }
-
-            response.EnsureSuccessStatusCode();
-            response.Dispose();
-            _logger.LogInformation("Sent Discord message to channel {ChannelId}.", outbound.RecipientId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to send Discord message to {RecipientId}.", outbound.RecipientId);
+            var length = Math.Min(2000, text.Length - offset);
+            if (offset + length < text.Length && char.IsHighSurrogate(text[offset + length - 1]) && char.IsLowSurrogate(text[offset + length]))
+                length--;
+            var payload = new DiscordCreateMessageRequest { Content = text.Substring(offset, length) };
+            using var response = await SendMessageRequestAsync(outbound.RecipientId, payload, ct);
+            ChannelDeliveryHttp.EnsureAccepted(response);
+            delivery.RecordAccepted();
+            offset += length;
         }
     }
 

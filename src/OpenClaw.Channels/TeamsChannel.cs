@@ -60,15 +60,21 @@ public sealed class TeamsChannel : IChannelAdapter
 
     public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
 
-    public async ValueTask SendAsync(OutboundMessage outbound, CancellationToken ct)
+    public ValueTask SendAsync(OutboundMessage outbound, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(outbound.Text)) return;
+        var delivery = new ChannelDeliveryAttempt();
+        return delivery.ExecuteAsync(() => SendCoreAsync(outbound, delivery, ct), ct);
+    }
+
+    private async Task SendCoreAsync(OutboundMessage outbound, ChannelDeliveryAttempt delivery, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(outbound.Text)) throw new ChannelDeliveryException("Teams message is empty.", false);
 
         var reference = ConversationReferences.GetValueOrDefault(outbound.RecipientId);
         if (reference is null)
         {
             _logger.LogWarning("Teams SendAsync: no conversation reference for '{RecipientId}'. Bot must receive a message first.", outbound.RecipientId);
-            return;
+            throw new ChannelDeliveryException("Teams conversation reference is missing.", false);
         }
 
         var chunks = ChunkText(outbound.Text, _config.TextChunkLimit, _config.ChunkMode);
@@ -97,15 +103,9 @@ public sealed class TeamsChannel : IChannelAdapter
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             request.Content = JsonContent.Create(activity, TeamsJsonContext.Default.TeamsOutboundActivity);
 
-            try
-            {
-                using var response = await _http.SendAsync(request, ct);
-                response.EnsureSuccessStatusCode();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to send Teams message to conversation '{ConversationId}'", reference.ConversationId);
-            }
+            using var response = await _http.SendAsync(request, ct);
+            ChannelDeliveryHttp.EnsureAccepted(response);
+            delivery.RecordAccepted();
         }
     }
 

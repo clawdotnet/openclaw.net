@@ -83,7 +83,13 @@ public sealed class BridgedChannelAdapter : IBridgedChannelControl, IRestartable
         }
     }
 
-    public async ValueTask SendAsync(OutboundMessage message, CancellationToken ct)
+    public ValueTask SendAsync(OutboundMessage message, CancellationToken ct)
+    {
+        var delivery = new ChannelDeliveryAttempt();
+        return delivery.ExecuteAsync(() => SendCoreAsync(message, delivery, ct), ct);
+    }
+
+    private async Task SendCoreAsync(OutboundMessage message, ChannelDeliveryAttempt delivery, CancellationToken ct)
     {
         var (markers, remainingText) = MediaMarkerProtocol.Extract(message.Text);
 
@@ -114,7 +120,7 @@ public sealed class BridgedChannelAdapter : IBridgedChannelControl, IRestartable
             text = string.IsNullOrWhiteSpace(text) ? markerText : markerText + "\n" + text;
         }
 
-        await _bridge.SendRequestAsync(
+        var response = await _bridge.SendAndWaitAsync(
             "channel_send",
             new BridgeChannelSendRequest
             {
@@ -129,6 +135,10 @@ public sealed class BridgedChannelAdapter : IBridgedChannelControl, IRestartable
             },
             CoreJsonContext.Default.BridgeChannelSendRequest,
             ct);
+        if (response.Error is not null || response.Result is not { ValueKind: JsonValueKind.Object } result ||
+            !result.TryGetProperty("ok", out var ok) || ok.ValueKind != JsonValueKind.True)
+            throw new ChannelDeliveryException("Plugin bridge did not confirm channel acceptance.", false, outcomeUnknown: true);
+        delivery.RecordAccepted();
     }
 
     /// <summary>

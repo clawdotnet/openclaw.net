@@ -24,19 +24,26 @@ public sealed class TwilioSmsChannel : IChannelAdapter
 
     public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
 
-    public async ValueTask SendAsync(OutboundMessage message, CancellationToken ct)
+    public ValueTask SendAsync(OutboundMessage message, CancellationToken ct)
+    {
+        var delivery = new ChannelDeliveryAttempt();
+        return delivery.ExecuteAsync(() => SendCoreAsync(message, delivery, ct), ct);
+    }
+
+    private async Task SendCoreAsync(OutboundMessage message, ChannelDeliveryAttempt delivery, CancellationToken ct)
     {
         var to = message.RecipientId;
         if (!IsAllowedRecipient(to))
-            return;
+            throw new ChannelDeliverySuppressedException("Recipient is not allowed by SMS policy.");
 
         var contact = await _contacts.GetAsync(to, ct);
         if (contact?.DoNotText == true)
-            return;
+            throw new ChannelDeliverySuppressedException("Recipient opted out of SMS.");
 
         var (ok, result) = await _client.SendAsync(to, message.Text, ct);
         if (!ok)
-            throw new InvalidOperationException(result);
+            throw new ChannelDeliveryException("SMS send was not confirmed.", false, outcomeUnknown: true);
+        delivery.RecordAccepted();
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;

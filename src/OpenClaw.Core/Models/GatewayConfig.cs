@@ -728,6 +728,7 @@ public sealed class WhatsAppChannelConfig
     public string? BridgeUrl { get; set; }
     public string? BridgeToken { get; set; }
     public string BridgeTokenRef { get; set; } = "env:WHATSAPP_BRIDGE_TOKEN";
+    // Legacy setting retained for config round trips. Failed sends are always reported to the worker.
     public bool BridgeSuppressSendExceptions { get; set; } = false;
 
     // First-party worker settings

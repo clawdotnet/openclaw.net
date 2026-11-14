@@ -29,7 +29,13 @@ public sealed class CronChannel : IChannelAdapter
 
     public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
 
-    public async ValueTask SendAsync(OutboundMessage message, CancellationToken ct)
+    public ValueTask SendAsync(OutboundMessage message, CancellationToken ct)
+    {
+        var delivery = new ChannelDeliveryAttempt();
+        return delivery.ExecuteAsync(() => SendCoreAsync(message, delivery, ct), ct);
+    }
+
+    private async Task SendCoreAsync(OutboundMessage message, ChannelDeliveryAttempt delivery, CancellationToken ct)
     {
         var recipient = string.IsNullOrWhiteSpace(message.RecipientId) ? "cron" : message.RecipientId;
         var subject = string.IsNullOrWhiteSpace(message.Subject) ? "OpenClaw Cron" : message.Subject!;
@@ -52,6 +58,7 @@ public sealed class CronChannel : IChannelAdapter
 
         await File.AppendAllTextAsync(path, sb.ToString(), Encoding.UTF8, ct);
 
+        delivery.RecordAccepted();
         _logger.LogInformation("Cron output written to {Path} (recipient={Recipient})", path, recipient);
     }
 

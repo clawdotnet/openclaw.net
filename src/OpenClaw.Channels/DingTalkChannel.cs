@@ -58,11 +58,15 @@ public sealed class DingTalkChannel : IChannelAdapter, IRestartableChannelAdapte
 
     public DingTalkChannel(
         DingTalkChannelConfig initialConfig,
-        ILogger<DingTalkChannel> logger)
+        ILogger<DingTalkChannel> logger) : this(initialConfig, logger, null)
+    {
+    }
+
+    internal DingTalkChannel(DingTalkChannelConfig initialConfig, ILogger<DingTalkChannel> logger, HttpClient? http)
     {
         _initialConfig = initialConfig;
         _logger = logger;
-        _http = HttpClientFactory.Create();
+        _http = http ?? HttpClientFactory.Create();
     }
 
     public string ChannelId => "dingtalk";
@@ -227,6 +231,7 @@ public sealed class DingTalkChannel : IChannelAdapter, IRestartableChannelAdapte
         request.Content = JsonContent.Create(requestBody, DingTalkJsonContext.Default.DingTalkGatewayConnectionRequest);
 
         using var response = await _http.SendAsync(request, ct);
+        ChannelDeliveryHttp.EnsureAccepted(response);
         var body = await response.Content.ReadAsStringAsync(ct);
         if (!response.IsSuccessStatusCode)
             throw new InvalidOperationException($"DingTalk stream connection open failed: {(int)response.StatusCode} {body}");
@@ -579,59 +584,33 @@ public sealed class DingTalkChannel : IChannelAdapter, IRestartableChannelAdapte
 
     // ──────────────────────────── Sending ────────────────────────────────────
 
-    public async ValueTask SendAsync(OutboundMessage outbound, CancellationToken ct)
+    public ValueTask SendAsync(OutboundMessage outbound, CancellationToken ct)
+    {
+        var delivery = new ChannelDeliveryAttempt();
+        return delivery.ExecuteAsync(() => SendCoreAsync(outbound, delivery, ct), ct);
+    }
+
+    private async Task SendCoreAsync(OutboundMessage outbound, ChannelDeliveryAttempt delivery, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(outbound.Text))
-            return;
-
-        try
+            throw new ChannelDeliveryException("DingTalk message is empty.", false);
+        var (markers, remaining) = MediaMarkerProtocol.Extract(outbound.Text);
+        if (!string.IsNullOrWhiteSpace(remaining))
         {
-            var (markers, remaining) = MediaMarkerProtocol.Extract(outbound.Text);
-
-            if (!string.IsNullOrWhiteSpace(remaining) && TryGetSessionWebhook(outbound.RecipientId, out var sessionWebhook))
-            {
-                await SendTextViaSessionWebhookAsync(sessionWebhook, remaining, ct);
-            }
-            else if (!string.IsNullOrWhiteSpace(remaining))
+            if (TryGetSessionWebhook(outbound.RecipientId, out var webhook))
+                await SendTextViaSessionWebhookAsync(webhook, remaining, ct);
+            else
             {
                 await RefreshAccessTokenAsync(ct);
                 await SendTextMessageAsync(outbound.RecipientId, remaining, ct);
             }
-
-            if (!string.IsNullOrWhiteSpace(remaining))
-            {
-                if (!TryGetSessionWebhook(outbound.RecipientId, out _))
-                    await RefreshAccessTokenAsync(ct);
-            }
-
-            foreach (var marker in markers)
-            {
-                try
-                {
-                    await RefreshAccessTokenAsync(ct);
-                    await SendMarkerAsync(outbound.RecipientId, marker, ct);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to send DingTalk media marker {Kind}={Value}.",
-                        marker.Kind, marker.Value);
-                }
-            }
-
-            if (string.IsNullOrWhiteSpace(remaining) && markers.Count == 0)
-            {
-                if (TryGetSessionWebhook(outbound.RecipientId, out var fallbackSessionWebhook))
-                    await SendTextViaSessionWebhookAsync(fallbackSessionWebhook, outbound.Text, ct);
-                else
-                {
-                    await RefreshAccessTokenAsync(ct);
-                    await SendTextMessageAsync(outbound.RecipientId, outbound.Text, ct);
-                }
-            }
+            delivery.RecordAccepted();
         }
-        catch (Exception ex)
+        foreach (var marker in markers)
         {
-            _logger.LogError(ex, "Failed to send DingTalk message to {RecipientId}.", outbound.RecipientId);
+            await RefreshAccessTokenAsync(ct);
+            await SendMarkerAsync(outbound.RecipientId, marker, ct);
+            delivery.RecordAccepted();
         }
     }
 
@@ -647,18 +626,14 @@ public sealed class DingTalkChannel : IChannelAdapter, IRestartableChannelAdapte
         request.Content = new StringContent(payload, Encoding.UTF8, "application/json");
 
         using var response = await _http.SendAsync(request, ct);
-        if (!response.IsSuccessStatusCode)
-        {
-            var body = await response.Content.ReadAsStringAsync(ct);
-            _logger.LogWarning("DingTalk sessionWebhook send failed: {Status} {Body}", response.StatusCode, body);
-        }
+        await ChannelDeliveryHttp.RequireZeroCodeAsync(response, "errcode", ct);
     }
 
     private async Task SendTextMessageAsync(string recipientId, string text, CancellationToken ct)
     {
         const int maxBytes = 8000;
         if (Encoding.UTF8.GetByteCount(text) > maxBytes)
-            text = TruncateToMaxUtf8Bytes(text, maxBytes);
+            throw new ChannelDeliveryException("DingTalk message exceeds the provider text limit.", false);
 
         var body = new DingTalkSendRequest
         {
@@ -678,9 +653,9 @@ public sealed class DingTalkChannel : IChannelAdapter, IRestartableChannelAdapte
             case MediaMarkerKind.ImageUrl:
                 {
                     var data = await FetchMediaBytesAsync(marker, ct);
-                    if (data is null) return;
+                    if (data is null) throw new ChannelDeliveryException("Media could not be loaded.", false);
                     var mediaId = await UploadMediaAsync(data, "image", ct);
-                    if (mediaId is null) return;
+                    if (string.IsNullOrWhiteSpace(mediaId)) throw new ChannelDeliveryException("Media upload was rejected.", false);
                     var body = new DingTalkSendRequest
                     {
                         MsgType = "image",
@@ -695,10 +670,10 @@ public sealed class DingTalkChannel : IChannelAdapter, IRestartableChannelAdapte
             case MediaMarkerKind.FileUrl:
                 {
                     var data = await FetchMediaBytesAsync(marker, ct);
-                    if (data is null) return;
+                    if (data is null) throw new ChannelDeliveryException("Media could not be loaded.", false);
                     var name = Path.GetFileName(marker.Value).NullIfEmpty() ?? "file";
                     var mediaId = await UploadMediaAsync(data, "file", ct);
-                    if (mediaId is null) return;
+                    if (string.IsNullOrWhiteSpace(mediaId)) throw new ChannelDeliveryException("Media upload was rejected.", false);
                     var body = new DingTalkSendRequest
                     {
                         MsgType = "file",
@@ -711,8 +686,8 @@ public sealed class DingTalkChannel : IChannelAdapter, IRestartableChannelAdapte
 
             case MediaMarkerKind.AudioUrl:
             case MediaMarkerKind.VideoUrl:
-                _logger.LogDebug("DingTalk does not support audio/video media markers directly.");
-                break;
+            default:
+                throw new ChannelDeliveryException("Unsupported DingTalk media type.", false);
         }
     }
 
@@ -726,14 +701,17 @@ public sealed class DingTalkChannel : IChannelAdapter, IRestartableChannelAdapte
         request.Content = new StringContent(json, Encoding.UTF8, "application/json");
 
         using var response = await _http.SendAsync(request, ct);
-        if (!response.IsSuccessStatusCode)
+        ChannelDeliveryHttp.EnsureAccepted(response);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        var root = document.RootElement;
+        foreach (var field in new[] { "code", "errcode" })
         {
-            var errBody = await response.Content.ReadAsStringAsync(ct);
-            _logger.LogWarning("DingTalk send failed: {Status} {Body}", response.StatusCode, errBody);
-        }
-        else
-        {
-            _logger.LogInformation("Sent DingTalk message to {RecipientId}.", recipientId);
+            if (!root.TryGetProperty(field, out var code))
+                continue;
+            var success = code.ValueKind == JsonValueKind.Number && code.TryGetInt32(out var value) && value == 0 ||
+                code.ValueKind == JsonValueKind.String && code.GetString() == "0";
+            if (!success)
+                throw new ChannelDeliveryException("DingTalk rejected the send.", false);
         }
     }
 
@@ -752,6 +730,7 @@ public sealed class DingTalkChannel : IChannelAdapter, IRestartableChannelAdapte
         request.Content = content;
 
         using var response = await _http.SendAsync(request, ct);
+        ChannelDeliveryHttp.EnsureAccepted(response);
         var body = await response.Content.ReadAsStringAsync(ct);
 
         using var doc = JsonDocument.Parse(body);
@@ -771,6 +750,10 @@ public sealed class DingTalkChannel : IChannelAdapter, IRestartableChannelAdapte
             return marker.Kind is MediaMarkerKind.ImagePath or MediaMarkerKind.FilePath
                 ? await File.ReadAllBytesAsync(marker.Value, ct)
                 : await _http.GetByteArrayAsync(marker.Value, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
