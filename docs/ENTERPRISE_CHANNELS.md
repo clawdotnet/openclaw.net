@@ -101,3 +101,7 @@ All enterprise channels follow the same security model as existing channels:
 - [Security](../SECURITY.md) — overall security posture
 - [Teams Setup](TEAMS_SETUP.md) — Microsoft Teams channel
 - [WhatsApp Setup](WHATSAPP_SETUP.md) — WhatsApp channel
+
+## Delivery outcomes
+
+See [Channel delivery outcomes](CHANNEL_DELIVERY.md) for provider acceptance, policy suppression, partial sends, cancellation, uncertain outcomes, and retry behavior across adapters.

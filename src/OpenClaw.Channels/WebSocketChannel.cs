@@ -164,10 +164,16 @@ public sealed class WebSocketChannel : IChannelAdapter
         }
     }
 
-    public async ValueTask SendAsync(OutboundMessage message, CancellationToken ct)
+    public ValueTask SendAsync(OutboundMessage message, CancellationToken ct)
+    {
+        var delivery = new ChannelDeliveryAttempt();
+        return delivery.ExecuteAsync(() => SendCoreAsync(message, delivery, ct), ct);
+    }
+
+    private async Task SendCoreAsync(OutboundMessage message, ChannelDeliveryAttempt delivery, CancellationToken ct)
     {
         if (!_connections.TryGetValue(message.RecipientId, out var state))
-            return;
+            throw new ChannelDeliveryException("WebSocket recipient is disconnected.", false);
 
         var payload = state.UseJsonEnvelope
             ? JsonSerializer.SerializeToUtf8Bytes(
@@ -180,7 +186,8 @@ public sealed class WebSocketChannel : IChannelAdapter
                 CoreJsonContext.Default.WsServerEnvelope)
             : Encoding.UTF8.GetBytes(message.Text);
 
-        await SendPayloadAsync(message.RecipientId, state, payload, ct);
+        await SendPayloadAsync(message.RecipientId, state, payload, ct, requireDelivery: true);
+        delivery.RecordAccepted();
     }
 
     public async ValueTask SendEnvelopeAsync(string recipientId, WsServerEnvelope envelope, CancellationToken ct)
@@ -203,10 +210,13 @@ public sealed class WebSocketChannel : IChannelAdapter
         await SendPayloadAsync(recipientId: null, state, payload, ct);
     }
 
-    private async ValueTask SendPayloadAsync(string? recipientId, ConnectionState state, byte[] payload, CancellationToken ct)
+    private async ValueTask SendPayloadAsync(string? recipientId, ConnectionState state, byte[] payload, CancellationToken ct, bool requireDelivery = false)
     {
         if (!TryReserveSend(state))
+        {
+            if (requireDelivery) throw new ChannelDeliveryException("WebSocket recipient is disconnected.", false);
             return;
+        }
 
         var acquired = false;
         try
@@ -217,23 +227,27 @@ public sealed class WebSocketChannel : IChannelAdapter
             if (recipientId is not null &&
                 (!_connections.TryGetValue(recipientId, out var current) || !ReferenceEquals(current, state)))
             {
+                if (requireDelivery) throw new ChannelDeliveryException("WebSocket connection was replaced.", false);
                 return;
             }
 
             if (state.Removed || state.Socket.State != WebSocketState.Open)
+            {
+                if (requireDelivery) throw new ChannelDeliveryException("WebSocket recipient is disconnected.", false);
                 return;
+            }
 
             await state.Socket.SendAsync(payload.AsMemory(), WebSocketMessageType.Text, endOfMessage: true, cancellationToken: ct);
         }
-        catch (ObjectDisposedException)
+        catch (ObjectDisposedException) when (!requireDelivery)
         {
             // Client disconnected mid-send.
         }
-        catch (WebSocketException)
+        catch (WebSocketException) when (!requireDelivery)
         {
             // Client disconnected mid-send.
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException) when (!requireDelivery)
         {
             // Socket is no longer usable.
         }

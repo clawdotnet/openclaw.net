@@ -24,10 +24,15 @@ public sealed partial class SlackChannel : IChannelAdapter
     private readonly string _botToken;
 
     public SlackChannel(SlackChannelConfig config, ILogger<SlackChannel> logger)
+        : this(config, logger, null)
+    {
+    }
+
+    internal SlackChannel(SlackChannelConfig config, ILogger<SlackChannel> logger, HttpClient? http)
     {
         _config = config;
         _logger = logger;
-        _http = HttpClientFactory.Create();
+        _http = http ?? HttpClientFactory.Create();
 
         var tokenSource = SecretResolver.Resolve(config.BotTokenRef) ?? config.BotToken;
         _botToken = tokenSource ?? throw new InvalidOperationException("Slack bot token not configured or missing from environment.");
@@ -41,53 +46,36 @@ public sealed partial class SlackChannel : IChannelAdapter
 
     public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
 
-    public async ValueTask SendAsync(OutboundMessage outbound, CancellationToken ct)
+    public ValueTask SendAsync(OutboundMessage outbound, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(outbound.Text)) return;
+        var delivery = new ChannelDeliveryAttempt();
+        return delivery.ExecuteAsync(() => SendCoreAsync(outbound, delivery, ct), ct);
+    }
 
-        try
+    private async Task SendCoreAsync(OutboundMessage outbound, ChannelDeliveryAttempt delivery, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(outbound.Text))
+            throw new ChannelDeliveryException("Slack message is empty.", false);
+        var (markers, remaining) = MediaMarkerProtocol.Extract(outbound.Text);
+        if (markers.Count > 0)
+            throw new ChannelDeliveryException("Slack media delivery is not supported by this adapter.", false);
+        var payload = new SlackPostMessageRequest
         {
-            var (markers, remaining) = MediaMarkerProtocol.Extract(outbound.Text);
-            var text = ConvertToMrkdwn(string.IsNullOrWhiteSpace(remaining) ? outbound.Text : remaining);
-
-            var payload = new SlackPostMessageRequest
-            {
-                Channel = outbound.RecipientId,
-                Text = text,
-                ThreadTs = outbound.ReplyToMessageId
-            };
-
-            using var request = new HttpRequestMessage(HttpMethod.Post, "https://slack.com/api/chat.postMessage");
-            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _botToken);
-            request.Content = JsonContent.Create(payload, SlackJsonContext.Default.SlackPostMessageRequest);
-
-            using var response = await _http.SendAsync(request, ct);
-
-            if ((int)response.StatusCode == 429)
-            {
-                var retryAfter = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(1);
-                _logger.LogWarning("Slack rate limited for {Channel}. Retry-After: {RetryAfter}s.", outbound.RecipientId, retryAfter.TotalSeconds);
-                return;
-            }
-
-            response.EnsureSuccessStatusCode();
-
-            // Slack returns 200 with ok=false for application-level errors
-            var responseBody = await response.Content.ReadAsStringAsync(ct);
-            using var doc = JsonDocument.Parse(responseBody);
-            if (doc.RootElement.TryGetProperty("ok", out var okProp) && okProp.ValueKind == JsonValueKind.False)
-            {
-                var error = doc.RootElement.TryGetProperty("error", out var e) ? e.GetString() : "unknown";
-                _logger.LogError("Slack API error sending to {Channel}: {Error}", outbound.RecipientId, error);
-                return;
-            }
-
-            _logger.LogInformation("Sent Slack message to {Channel}", outbound.RecipientId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to send Slack message to {Channel}", outbound.RecipientId);
-        }
+            Channel = outbound.RecipientId,
+            Text = ConvertToMrkdwn(string.IsNullOrWhiteSpace(remaining) ? outbound.Text : remaining),
+            ThreadTs = outbound.ReplyToMessageId
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://slack.com/api/chat.postMessage");
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _botToken);
+        request.Content = JsonContent.Create(payload, SlackJsonContext.Default.SlackPostMessageRequest);
+        using var response = await _http.SendAsync(request, ct);
+        ChannelDeliveryHttp.EnsureAccepted(response);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        if (!doc.RootElement.TryGetProperty("ok", out var ok) || ok.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            throw new ChannelDeliveryException("Slack acknowledgment is invalid.", false, outcomeUnknown: true);
+        if (!ok.GetBoolean())
+            throw new ChannelDeliveryException("Slack rejected the send.", false);
+        delivery.RecordAccepted();
     }
 
     /// <summary>

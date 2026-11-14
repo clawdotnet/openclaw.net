@@ -51,23 +51,22 @@ public sealed class SignalChannel : IChannelAdapter
         return Task.CompletedTask;
     }
 
-    public async ValueTask SendAsync(OutboundMessage outbound, CancellationToken ct)
+    public ValueTask SendAsync(OutboundMessage outbound, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(outbound.Text)) return;
+        var delivery = new ChannelDeliveryAttempt();
+        return delivery.ExecuteAsync(() => SendCoreAsync(outbound, delivery, ct), ct);
+    }
 
-        try
-        {
-            if (string.Equals(_config.Driver, "signald", StringComparison.OrdinalIgnoreCase))
-                await SendViaSignaldAsync(outbound.RecipientId, outbound.Text, ct);
-            else
-                await SendViaSignalCliAsync(outbound.RecipientId, outbound.Text, ct);
-
-            LogSend(outbound.RecipientId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to send Signal message to {Recipient}.", outbound.RecipientId);
-        }
+    private async Task SendCoreAsync(OutboundMessage outbound, ChannelDeliveryAttempt delivery, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(outbound.Text))
+            throw new ChannelDeliveryException("Signal message is empty.", false);
+        if (string.Equals(_config.Driver, "signald", StringComparison.OrdinalIgnoreCase))
+            await SendViaSignaldAsync(outbound.RecipientId, outbound.Text, ct);
+        else
+            await SendViaSignalCliAsync(outbound.RecipientId, outbound.Text, ct);
+        delivery.RecordAccepted();
+        LogSend(outbound.RecipientId);
     }
 
     private void LogSend(string recipient)
@@ -177,12 +176,19 @@ public sealed class SignalChannel : IChannelAdapter
 
         var payload = $$"""{"type":"send","username":"{{_accountNumber}}","recipientAddress":{"number":"{{recipient}}"},"messageBody":"{{EscapeJson(text)}}"}""";
         await SendToSocketAsync(socket, payload, ct);
+        throw new ChannelDeliveryException("signald request written without a correlated delivery acknowledgment.", false, outcomeUnknown: true);
     }
 
     private static async Task SendToSocketAsync(Socket socket, string message, CancellationToken ct)
     {
         var bytes = Encoding.UTF8.GetBytes(message + "\n");
-        await socket.SendAsync(bytes, SocketFlags.None, ct);
+        var offset = 0;
+        while (offset < bytes.Length)
+        {
+            var written = await socket.SendAsync(bytes.AsMemory(offset), SocketFlags.None, ct);
+            if (written == 0) throw new IOException("Signal socket closed during write.");
+            offset += written;
+        }
     }
 
     // ── signal-cli driver ───────────────────────────────────────
@@ -307,8 +313,22 @@ public sealed class SignalChannel : IChannelAdapter
         psi.ArgumentList.Add(recipient);
 
         using var process = System.Diagnostics.Process.Start(psi);
-        if (process is not null)
+        if (process is null)
+            throw new ChannelDeliveryException("signal-cli could not be started.", false);
+        var output = process.StandardOutput.ReadToEndAsync(ct);
+        try
+        {
             await process.WaitForExitAsync(ct);
+            await output;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
+            catch (InvalidOperationException) { }
+            throw;
+        }
+        if (process.ExitCode != 0)
+            throw new ChannelDeliveryException("signal-cli exited without confirming the send.", false, outcomeUnknown: true);
     }
 
     // ── common ──────────────────────────────────────────────────

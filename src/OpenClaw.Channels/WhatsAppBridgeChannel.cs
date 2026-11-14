@@ -36,17 +36,23 @@ public sealed class WhatsAppBridgeChannel : IChannelAdapter
 
     public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
 
-    public async ValueTask SendAsync(OutboundMessage outbound, CancellationToken ct)
+    public ValueTask SendAsync(OutboundMessage outbound, CancellationToken ct)
+    {
+        var delivery = new ChannelDeliveryAttempt();
+        return delivery.ExecuteAsync(() => SendCoreAsync(outbound, delivery, ct), ct);
+    }
+
+    private async Task SendCoreAsync(OutboundMessage outbound, ChannelDeliveryAttempt delivery, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(_config.BridgeUrl))
         {
             _logger.LogWarning("WhatsApp Bridge SendAsync aborted: BridgeUrl is not configured.");
-            return;
+            throw new ChannelDeliveryException("WhatsApp destination configuration or content is missing.", false);
         }
 
         var (markers, remainingText) = MediaMarkerProtocol.Extract(outbound.Text);
         if (markers.Count == 0 && string.IsNullOrWhiteSpace(remainingText))
-            return;
+            throw new ChannelDeliveryException("WhatsApp destination configuration or content is missing.", false);
 
         WhatsAppBridgeAttachmentPayload[]? attachments = null;
         if (markers.Count > 0)
@@ -77,20 +83,11 @@ public sealed class WhatsAppBridgeChannel : IChannelAdapter
         }
         request.Content = JsonContent.Create(payload, WhatsAppBridgeJsonContext.Default.WhatsAppBridgeSendPayload);
 
-        try
-        {
-            using var response = await _http.SendAsync(request, ct);
-            response.EnsureSuccessStatusCode();
-            _logger.LogInformation("Sent WhatsApp Bridge message to {RecipientId}", outbound.RecipientId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to send WhatsApp Bridge message to {RecipientId}", outbound.RecipientId);
-            if (_config.BridgeSuppressSendExceptions)
-                return;
+        using var response = await _http.SendAsync(request, ct);
+        ChannelDeliveryHttp.EnsureAccepted(response);
+        delivery.RecordAccepted();
+        _logger.LogInformation("Sent WhatsApp Bridge message to {RecipientId}", outbound.RecipientId);
 
-            throw;
-        }
     }
 
     public async ValueTask RaiseInboundAsync(InboundMessage message, CancellationToken ct)
@@ -114,7 +111,7 @@ public sealed class WhatsAppBridgeChannel : IChannelAdapter
             MediaMarkerKind.AudioUrl => "audio",
             MediaMarkerKind.DocumentUrl or MediaMarkerKind.FileUrl or MediaMarkerKind.FilePath => "document",
             MediaMarkerKind.StickerUrl => "sticker",
-            _ => throw new InvalidOperationException($"WhatsApp bridge does not support marker kind '{kind}'.")
+            _ => throw new ChannelDeliveryException($"WhatsApp bridge does not support marker kind '{kind}'.", false)
         };
 }
 

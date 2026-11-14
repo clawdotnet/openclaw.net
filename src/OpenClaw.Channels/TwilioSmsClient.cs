@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Abstractions;
 
 namespace OpenClaw.Channels;
 
@@ -20,10 +21,10 @@ internal sealed class TwilioSmsClient
     public async Task<(bool Ok, string Message)> SendAsync(string toE164, string body, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(_config.AccountSid))
-            return (false, "Twilio AccountSid is not configured.");
+            throw new ChannelDeliveryException("Twilio AccountSid is not configured.", false);
 
         if (string.IsNullOrWhiteSpace(_config.MessagingServiceSid) && string.IsNullOrWhiteSpace(_config.FromNumber))
-            return (false, "Twilio MessagingServiceSid or FromNumber must be configured.");
+            throw new ChannelDeliveryException("Twilio MessagingServiceSid or FromNumber must be configured.", false);
 
         var url = $"https://api.twilio.com/2010-04-01/Accounts/{_config.AccountSid}/Messages.json";
 
@@ -44,12 +45,8 @@ internal sealed class TwilioSmsClient
         req.Content = new FormUrlEncodedContent(pairs);
 
         using var res = await _http.SendAsync(req, ct);
-        var text = await res.Content.ReadAsStringAsync(ct);
-
-        if (res.IsSuccessStatusCode)
-            return (true, "ok");
-
-        return (false, $"Twilio send failed ({(int)res.StatusCode}): {text}");
+        ChannelDeliveryHttp.EnsureAccepted(res);
+        return (true, "ok");
     }
 
     private static AuthenticationHeaderValue CreateBasicAuth(string accountSid, string authToken)

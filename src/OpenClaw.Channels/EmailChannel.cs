@@ -16,11 +16,18 @@ public sealed class EmailChannel : IChannelAdapter
 {
     private readonly EmailConfig _config;
     private readonly ILogger<EmailChannel> _logger;
+    private readonly Func<ISmtpClient> _createSmtpClient;
 
     public EmailChannel(EmailConfig config, ILogger<EmailChannel> logger)
+        : this(config, logger, static () => new SmtpClient())
+    {
+    }
+
+    internal EmailChannel(EmailConfig config, ILogger<EmailChannel> logger, Func<ISmtpClient> createSmtpClient)
     {
         _config = config;
         _logger = logger;
+        _createSmtpClient = createSmtpClient;
     }
 
     public string ChannelId => "email";
@@ -54,23 +61,29 @@ public sealed class EmailChannel : IChannelAdapter
             await PollInboxSafeAsync(ct);
     }
 
-    public async ValueTask SendAsync(OutboundMessage message, CancellationToken ct)
+    public ValueTask SendAsync(OutboundMessage message, CancellationToken ct)
+    {
+        var delivery = new ChannelDeliveryAttempt();
+        return delivery.ExecuteAsync(() => SendCoreAsync(message, delivery, ct), ct);
+    }
+
+    private async Task SendCoreAsync(OutboundMessage message, ChannelDeliveryAttempt delivery, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(_config.SmtpHost))
-            throw new InvalidOperationException("Email channel requires Email.SmtpHost to be configured.");
+            throw new ChannelDeliveryException("Email channel requires Email.SmtpHost to be configured.", false);
 
         var to = message.RecipientId;
         if (string.IsNullOrWhiteSpace(to))
-            return;
+            throw new ChannelDeliveryException("Email recipient is missing.", false);
 
         var password = SecretResolver.Resolve(_config.PasswordRef);
         if (string.IsNullOrWhiteSpace(_config.Username) || string.IsNullOrWhiteSpace(password))
-            throw new InvalidOperationException("Email channel requires Email.Username and Email.PasswordRef to be configured.");
+            throw new ChannelDeliveryException("Email channel requires Email.Username and Email.PasswordRef to be configured.", false);
 
         var from = _config.FromAddress ?? _config.Username;
         var subject = string.IsNullOrWhiteSpace(message.Subject) ? "OpenClaw" : message.Subject!;
 
-        using var client = new SmtpClient();
+        using var client = _createSmtpClient();
         await client.ConnectAsync(_config.SmtpHost, _config.SmtpPort, GetSecureSocketOptions(_config.SmtpUseTls, _config.SmtpPort), ct);
         await client.AuthenticateAsync(_config.Username, password, ct);
 
@@ -80,8 +93,24 @@ public sealed class EmailChannel : IChannelAdapter
         mail.Subject = subject;
         mail.Body = new TextPart("plain") { Text = message.Text ?? string.Empty };
 
-        await client.SendAsync(mail, ct);
-        await client.DisconnectAsync(true, ct);
+        try
+        {
+            await client.SendAsync(mail, ct);
+        }
+        catch (SmtpCommandException ex)
+        {
+            throw new ChannelDeliveryException("SMTP server rejected the message.",
+                canRetry: (int)ex.StatusCode is >= 400 and < 500, innerException: ex);
+        }
+        delivery.RecordAccepted();
+        try
+        {
+            await client.DisconnectAsync(true, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "SMTP disconnect failed after message acceptance.");
+        }
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;

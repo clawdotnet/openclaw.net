@@ -152,6 +152,7 @@ public sealed class TelegramChannel : IChannelAdapter
 
     public async ValueTask SendAsync(OutboundMessage outbound, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         if (string.IsNullOrWhiteSpace(outbound.Text))
             throw new ChannelDeliveryException("Telegram message is empty.", canRetry: false);
 
@@ -169,6 +170,9 @@ public sealed class TelegramChannel : IChannelAdapter
                 .Select(static marker => TelegramMediaRequest.TryCreate(marker, out var request) ? request : null)
                 .OfType<TelegramMediaRequest>()
                 .ToList();
+
+            if (media.Count != markers.Count)
+                throw new ChannelDeliveryException("Telegram message contains unsupported media.", false);
 
             if (media.Count == 0)
             {

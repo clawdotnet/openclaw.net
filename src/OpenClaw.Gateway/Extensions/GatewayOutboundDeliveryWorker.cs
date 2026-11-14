@@ -68,6 +68,11 @@ internal sealed class GatewayOutboundDeliveryWorker
                 await adapter.SendAsync(outbound, ct);
                 return true;
             }
+            catch (ChannelDeliverySuppressedException ex)
+            {
+                logger.LogInformation("Outbound send suppressed for {ChannelId}: {Reason}", outbound.ChannelId, ex.Message);
+                return false;
+            }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
                 throw;
@@ -86,7 +91,7 @@ internal sealed class GatewayOutboundDeliveryWorker
                     outbound.ChannelId, ex.DeliveredParts, ex.OutcomeUnknown);
                 return false;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (ChannelDeliveryException ex) when (ex.CanRetry)
             {
                 if (attempt == maxDeliveryAttempts)
                 {
@@ -101,6 +106,11 @@ internal sealed class GatewayOutboundDeliveryWorker
                     await retryDelay(delay, ct);
                 else
                     await DelayWithCancellationAsync(delay, ct);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Unclassified outbound failure for {ChannelId}; outcome unknown, not retrying.", outbound.ChannelId);
+                return false;
             }
         }
         return false;
