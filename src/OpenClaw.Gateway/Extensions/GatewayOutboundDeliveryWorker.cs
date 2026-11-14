@@ -8,6 +8,8 @@ namespace OpenClaw.Gateway.Extensions;
 
 internal sealed class GatewayOutboundDeliveryWorker
 {
+    private static readonly TimeSpan MaximumRetryDelay = TimeSpan.FromMinutes(5);
+
     public void Start(
         IHostApplicationLifetime lifetime,
         ILogger logger,
@@ -99,9 +101,16 @@ internal sealed class GatewayOutboundDeliveryWorker
                     return false;
                 }
                 logger.LogWarning(ex, "Outbound send failed for channel {ChannelId}, retrying…", outbound.ChannelId);
-                var delay = ex is ChannelDeliveryException { RetryAfter: { } retryAfter } && retryAfter > TimeSpan.Zero
+                var delay = ex.RetryAfter is { } retryAfter && retryAfter > TimeSpan.Zero
                     ? retryAfter
                     : TimeSpan.FromMilliseconds(500);
+                if (delay > MaximumRetryDelay)
+                {
+                    logger.LogError(ex,
+                        "Outbound send for channel {ChannelId} requested a retry delay of {RetryDelay}, exceeding the {MaximumRetryDelay} safety limit; not retrying.",
+                        outbound.ChannelId, delay, MaximumRetryDelay);
+                    return false;
+                }
                 if (retryDelay is not null)
                     await retryDelay(delay, ct);
                 else

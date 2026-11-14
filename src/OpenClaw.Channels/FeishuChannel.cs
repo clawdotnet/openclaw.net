@@ -139,11 +139,18 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
                 await _cts.CancelAsync();
                 if (_receiveLoop is not null)
                 {
-                    try { await _receiveLoop; }
+                    try
+                    {
+                        await _receiveLoop;
+                    }
                     catch (OperationCanceledException)
-    {
-    }
-                    catch (Exception ex) { _logger.LogDebug(ex, "Feishu receive loop exited with error during restart."); }
+                    {
+                        _logger.LogTrace("Feishu receive loop canceled during restart.");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "Feishu receive loop exited with error during restart.");
+                    }
                 }
                 _cts.Dispose();
                 _cts = null;
@@ -302,10 +309,14 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
         finally
         {
             await heartbeatCts.CancelAsync();
-            try { await heartbeatTask; }
+            try
+            {
+                await heartbeatTask;
+            }
             catch (OperationCanceledException)
-    {
-    }
+            {
+                _logger.LogTrace("Feishu heartbeat canceled while closing the connection.");
+            }
         }
     }
 
@@ -997,7 +1008,9 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
         // Feishu text limit is ~30 KB
         const int maxBytes = 30_000;
         if (Encoding.UTF8.GetByteCount(text) > maxBytes)
-            text = TruncateToMaxUtf8Bytes(text, maxBytes);
+        {
+            throw new ChannelDeliveryException("Feishu message exceeds the provider text limit.", false);
+        }
 
         var contentJson = $"{{\"text\":{JsonEscapeString(text)}}}";
         await SendFeishuMessageAsync(recipientId, "text", contentJson, ct);
@@ -1099,7 +1112,7 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
         req.Content = content;
 
         using var resp = await _http.SendAsync(req, ct);
-        ChannelDeliveryHttp.EnsureAccepted(resp);
+        ChannelDeliveryHttp.EnsurePreSendAccepted(resp);
         var body = await resp.Content.ReadAsStringAsync(ct);
 
         using var doc = JsonDocument.Parse(body);
@@ -1132,7 +1145,7 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
         req.Content = content;
 
         using var resp = await _http.SendAsync(req, ct);
-        ChannelDeliveryHttp.EnsureAccepted(resp);
+        ChannelDeliveryHttp.EnsurePreSendAccepted(resp);
         var body = await resp.Content.ReadAsStringAsync(ct);
 
         using var doc = JsonDocument.Parse(body);
@@ -1190,6 +1203,7 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
         req.Content = new StringContent(body, Encoding.UTF8, "application/json");
 
         using var resp = await _http.SendAsync(req, ct);
+        ChannelDeliveryHttp.EnsurePreSendAccepted(resp);
         var responseBody = await resp.Content.ReadAsStringAsync(ct);
 
         using var doc = JsonDocument.Parse(responseBody);
@@ -1389,16 +1403,6 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
             "opus" => "opus",
             _ => "stream"
         };
-    }
-
-    private static string TruncateToMaxUtf8Bytes(string s, int maxBytes)
-    {
-        var encoded = Encoding.UTF8.GetBytes(s);
-        if (encoded.Length <= maxBytes)
-            return s;
-        // Decode back, trimming incomplete character sequences
-        return Encoding.UTF8.GetString(encoded, 0, maxBytes)
-                            .TrimEnd('\uFFFD');
     }
 
     // ──────────────────────────── pbbp2 Protobuf frame types ────────────────
@@ -1634,10 +1638,14 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
             await _cts.CancelAsync();
             if (_receiveLoop is not null)
             {
-                try { await _receiveLoop; }
+                try
+                {
+                    await _receiveLoop;
+                }
                 catch (OperationCanceledException)
-    {
-    }
+                {
+                    _logger.LogTrace("Feishu receive loop canceled during disposal.");
+                }
                 catch (Exception ex)
                 {
                     _logger.LogDebug(ex, "Feishu receive loop exited during dispose.");

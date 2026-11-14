@@ -1,6 +1,8 @@
 using MailKit;
 using MailKit.Net.Smtp;
+using MailKit.Security;
 using MimeKit;
+using System.Net.Sockets;
 using NSubstitute;
 using Microsoft.Extensions.Logging.Abstractions;
 using OpenClaw.Channels;
@@ -96,5 +98,48 @@ public sealed class EmailChannelTests
         {
             ChannelId = "email", RecipientId = "recipient@example.test", Text = "hello"
         }, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task SendAsync_WhenSmtpConnectFailsBeforeDispatch_ShouldBeRetryable()
+    {
+        var smtp = Substitute.For<ISmtpClient>();
+        smtp.ConnectAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<SecureSocketOptions>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new SocketException((int)SocketError.ConnectionReset)));
+        await using var channel = new EmailChannel(new EmailConfig
+        {
+            SmtpHost = "fixture", Username = "sender@example.test", PasswordRef = "fixture-password"
+        }, NullLogger<EmailChannel>.Instance, () => smtp);
+
+        var error = await Assert.ThrowsAsync<ChannelDeliveryException>(() => channel.SendAsync(new OutboundMessage
+        {
+            ChannelId = "email", RecipientId = "recipient@example.test", Text = "hello"
+        }, TestContext.Current.CancellationToken).AsTask());
+
+        Assert.True(error.CanRetry);
+        Assert.False(error.OutcomeUnknown);
+    }
+
+    [Fact]
+    public async Task SendAsync_WhenCallerCancelsDuringDisconnect_ShouldPropagateCancellation()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var smtp = Substitute.For<ISmtpClient>();
+        smtp.SendAsync(Arg.Any<MimeMessage>(), Arg.Any<CancellationToken>(), Arg.Any<ITransferProgress>())
+            .Returns(Task.FromResult("accepted"));
+        smtp.DisconnectAsync(true, Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            cancellation.Cancel();
+            return Task.FromException(new OperationCanceledException(cancellation.Token));
+        });
+        await using var channel = new EmailChannel(new EmailConfig
+        {
+            SmtpHost = "fixture", Username = "sender@example.test", PasswordRef = "fixture-password"
+        }, NullLogger<EmailChannel>.Instance, () => smtp);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => channel.SendAsync(new OutboundMessage
+        {
+            ChannelId = "email", RecipientId = "recipient@example.test", Text = "hello"
+        }, cancellation.Token).AsTask());
     }
 }

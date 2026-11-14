@@ -5,6 +5,7 @@ using MailKit.Search;
 using MailKit.Security;
 using Microsoft.Extensions.Logging;
 using MimeKit;
+using System.Net.Sockets;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Plugins;
@@ -84,8 +85,46 @@ public sealed class EmailChannel : IChannelAdapter
         var subject = string.IsNullOrWhiteSpace(message.Subject) ? "OpenClaw" : message.Subject!;
 
         using var client = _createSmtpClient();
-        await client.ConnectAsync(_config.SmtpHost, _config.SmtpPort, GetSecureSocketOptions(_config.SmtpUseTls, _config.SmtpPort), ct);
-        await client.AuthenticateAsync(_config.Username, password, ct);
+        try
+        {
+            await client.ConnectAsync(_config.SmtpHost, _config.SmtpPort,
+                GetSecureSocketOptions(_config.SmtpUseTls, _config.SmtpPort), ct);
+            await client.AuthenticateAsync(_config.Username, password, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (SmtpCommandException ex)
+        {
+            throw new ChannelDeliveryException("SMTP server rejected the connection or authentication request.",
+                canRetry: (int)ex.StatusCode is >= 400 and < 500, innerException: ex);
+        }
+        catch (SslHandshakeException ex)
+        {
+            throw new ChannelDeliveryException("SMTP TLS negotiation failed before dispatch.", true,
+                innerException: ex);
+        }
+        catch (MailKit.Security.AuthenticationException ex)
+        {
+            throw new ChannelDeliveryException("SMTP authentication failed before dispatch.", true,
+                innerException: ex);
+        }
+        catch (SocketException ex)
+        {
+            throw new ChannelDeliveryException("SMTP connection failed before dispatch.", true,
+                innerException: ex);
+        }
+        catch (SmtpProtocolException ex)
+        {
+            throw new ChannelDeliveryException("SMTP protocol failed before dispatch.", true,
+                innerException: ex);
+        }
+        catch (IOException ex)
+        {
+            throw new ChannelDeliveryException("SMTP transport failed before dispatch.", true,
+                innerException: ex);
+        }
 
         var mail = new MimeMessage();
         mail.From.Add(MailboxAddress.Parse(from!));
@@ -106,6 +145,10 @@ public sealed class EmailChannel : IChannelAdapter
         try
         {
             await client.DisconnectAsync(true, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {

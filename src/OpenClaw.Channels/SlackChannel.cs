@@ -74,7 +74,12 @@ public sealed partial class SlackChannel : IChannelAdapter
         if (!doc.RootElement.TryGetProperty("ok", out var ok) || ok.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
             throw new ChannelDeliveryException("Slack acknowledgment is invalid.", false, outcomeUnknown: true);
         if (!ok.GetBoolean())
-            throw new ChannelDeliveryException("Slack rejected the send.", false);
+        {
+            var detail = ChannelDeliveryHttp.GetProviderErrorDetail(doc.RootElement);
+            throw new ChannelDeliveryException(detail is null
+                ? "Slack rejected the send."
+                : $"Slack rejected the send (error={detail}).", false);
+        }
         delivery.RecordAccepted();
     }
 

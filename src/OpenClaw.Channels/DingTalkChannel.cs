@@ -231,7 +231,6 @@ public sealed class DingTalkChannel : IChannelAdapter, IRestartableChannelAdapte
         request.Content = JsonContent.Create(requestBody, DingTalkJsonContext.Default.DingTalkGatewayConnectionRequest);
 
         using var response = await _http.SendAsync(request, ct);
-        ChannelDeliveryHttp.EnsureAccepted(response);
         var body = await response.Content.ReadAsStringAsync(ct);
         if (!response.IsSuccessStatusCode)
             throw new InvalidOperationException($"DingTalk stream connection open failed: {(int)response.StatusCode} {body}");
@@ -730,7 +729,7 @@ public sealed class DingTalkChannel : IChannelAdapter, IRestartableChannelAdapte
         request.Content = content;
 
         using var response = await _http.SendAsync(request, ct);
-        ChannelDeliveryHttp.EnsureAccepted(response);
+        ChannelDeliveryHttp.EnsurePreSendAccepted(response);
         var body = await response.Content.ReadAsStringAsync(ct);
 
         using var doc = JsonDocument.Parse(body);
@@ -782,6 +781,7 @@ public sealed class DingTalkChannel : IChannelAdapter, IRestartableChannelAdapte
         request.Content = new StringContent(body, Encoding.UTF8, "application/json");
 
         using var response = await _http.SendAsync(request, ct);
+        ChannelDeliveryHttp.EnsurePreSendAccepted(response);
         var responseBody = await response.Content.ReadAsStringAsync(ct);
 
         using var doc = JsonDocument.Parse(responseBody);

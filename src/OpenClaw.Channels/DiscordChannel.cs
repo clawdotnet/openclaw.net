@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Net.WebSockets;
@@ -25,6 +26,7 @@ public sealed class DiscordChannel : IChannelAdapter
     private const int GatewayIntentGuildMessages = 1 << 9;
     private const int GatewayIntentDirectMessages = 1 << 12;
     private const int GatewayIntentMessageContent = 1 << 15;
+    private static readonly TimeSpan MaximumRetryDelay = TimeSpan.FromMinutes(5);
 
     private readonly DiscordChannelConfig _config;
     private readonly HttpClient _http;
@@ -32,6 +34,7 @@ public sealed class DiscordChannel : IChannelAdapter
     private readonly string _botToken;
     private readonly string? _applicationId;
     private readonly bool _ownsHttp;
+    private readonly Func<TimeSpan, CancellationToken, Task> _retryDelay;
 
     private ClientWebSocket? _gateway;
     private CancellationTokenSource? _cts;
@@ -46,11 +49,21 @@ public sealed class DiscordChannel : IChannelAdapter
     }
 
     public DiscordChannel(DiscordChannelConfig config, ILogger<DiscordChannel> logger, HttpClient? http)
+        : this(config, logger, http, Task.Delay)
+    {
+    }
+
+    internal DiscordChannel(
+        DiscordChannelConfig config,
+        ILogger<DiscordChannel> logger,
+        HttpClient? http,
+        Func<TimeSpan, CancellationToken, Task> retryDelay)
     {
         _config = config;
         _logger = logger;
         _http = http ?? HttpClientFactory.Create();
         _ownsHttp = http is null;
+        _retryDelay = retryDelay;
 
         var tokenSource = SecretResolver.Resolve(config.BotTokenRef) ?? config.BotToken;
         _botToken = tokenSource ?? throw new InvalidOperationException("Discord bot token not configured or missing from environment.");
@@ -93,11 +106,63 @@ public sealed class DiscordChannel : IChannelAdapter
             if (offset + length < text.Length && char.IsHighSurrogate(text[offset + length - 1]) && char.IsLowSurrogate(text[offset + length]))
                 length--;
             var payload = new DiscordCreateMessageRequest { Content = text.Substring(offset, length) };
-            using var response = await SendMessageRequestAsync(outbound.RecipientId, payload, ct);
-            ChannelDeliveryHttp.EnsureAccepted(response);
+            for (var attempt = 1; attempt <= 2; attempt++)
+            {
+                using var response = await SendMessageRequestAsync(outbound.RecipientId, payload, ct);
+                var retryAfter = response.StatusCode == HttpStatusCode.TooManyRequests
+                    ? await ReadRetryAfterAsync(response, ct)
+                    : null;
+                if (response.StatusCode == HttpStatusCode.TooManyRequests &&
+                    delivery.AcceptedParts > 0 && attempt == 1)
+                {
+                    var delay = retryAfter ?? TimeSpan.FromMilliseconds(500);
+                    if (delay > MaximumRetryDelay)
+                    {
+                        throw new ChannelDeliveryException(
+                            $"Discord requested a retry delay longer than {MaximumRetryDelay.TotalMinutes:0} minutes.", false);
+                    }
+
+                    await _retryDelay(delay, ct);
+                    continue;
+                }
+
+                ChannelDeliveryHttp.EnsureAccepted(response, retryAfter);
+                break;
+            }
             delivery.RecordAccepted();
             offset += length;
         }
+    }
+
+    private static async Task<TimeSpan?> ReadRetryAfterAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        var retryAfter = ChannelDeliveryHttp.GetRetryAfter(response);
+        if (retryAfter is not null)
+        {
+            return retryAfter;
+        }
+
+        var body = await response.Content.ReadAsStringAsync(ct);
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            if (document.RootElement.TryGetProperty("retry_after", out var value) &&
+                value.TryGetDouble(out var seconds) && seconds >= 0)
+            {
+                if (seconds > MaximumRetryDelay.TotalSeconds)
+                {
+                    return MaximumRetryDelay + TimeSpan.FromSeconds(1);
+                }
+
+                return TimeSpan.FromSeconds(seconds);
+            }
+        }
+        catch (JsonException)
+        {
+            // A malformed error response is still a known HTTP 429 rejection.
+        }
+
+        return null;
     }
 
     private async Task<HttpResponseMessage> SendMessageRequestAsync(

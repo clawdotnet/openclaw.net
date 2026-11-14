@@ -94,7 +94,7 @@ public sealed class LocalChannelDeliveryTests
     }
 
     [Fact]
-    public async Task SendAsync_WhenSignaldOnlyAcceptsSocketWrite_ShouldReportUnknown()
+    public async Task SendAsync_WhenSignaldSocketWriteCompletes_ShouldReportAcceptance()
     {
         if (OperatingSystem.IsWindows()) return;
         var path = Path.Join("/tmp", $"signal-{Guid.NewGuid():N}.sock");
@@ -109,12 +109,11 @@ public sealed class LocalChannelDeliveryTests
                 AccountPhoneNumber = "+15550000000", Driver = "signald", SocketPath = path
             }, NullLogger<SignalChannel>.Instance);
             var accept = listener.AcceptAsync(TestContext.Current.CancellationToken).AsTask();
-            var error = await Assert.ThrowsAsync<ChannelDeliveryException>(() => adapter.SendAsync(Message, TestContext.Current.CancellationToken).AsTask());
+            var send = adapter.SendAsync(Message, TestContext.Current.CancellationToken).AsTask();
             using var peer = await accept;
             var bytes = new byte[4096];
             Assert.True(await peer.ReceiveAsync(bytes, TestContext.Current.CancellationToken) > 0);
-            Assert.True(error.OutcomeUnknown);
-            Assert.False(error.CanRetry);
+            await send;
         }
         finally { File.Delete(path); }
     }

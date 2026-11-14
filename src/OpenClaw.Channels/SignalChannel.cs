@@ -176,7 +176,6 @@ public sealed class SignalChannel : IChannelAdapter
 
         var payload = $$"""{"type":"send","username":"{{_accountNumber}}","recipientAddress":{"number":"{{recipient}}"},"messageBody":"{{EscapeJson(text)}}"}""";
         await SendToSocketAsync(socket, payload, ct);
-        throw new ChannelDeliveryException("signald request written without a correlated delivery acknowledgment.", false, outcomeUnknown: true);
     }
 
     private static async Task SendToSocketAsync(Socket socket, string message, CancellationToken ct)
@@ -323,8 +322,17 @@ public sealed class SignalChannel : IChannelAdapter
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
-            catch (InvalidOperationException) { }
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogTrace(ex, "signal-cli exited before cancellation cleanup.");
+            }
             throw;
         }
         if (process.ExitCode != 0)

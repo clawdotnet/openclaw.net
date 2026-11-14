@@ -11,7 +11,8 @@ completed frame write; cron acceptance means an appended local output record.
   delivery success.
 - **Rejected:** `ChannelDeliveryException` with a known provider rejection or
   local validation error. Only explicit transient rejections before any accepted
-  part may retry; provider retry delays are respected.
+  part may retry; provider retry delays are respected up to a five-minute worker
+  safety limit. Longer delays fail the current send instead of blocking a worker.
 - **Partial:** the exception's `DeliveredParts` counts confirmed accepted parts.
   The worker never replays the whole message.
 - **Unknown:** transport loss, malformed acknowledgment, or an unclassified
@@ -44,11 +45,10 @@ requires one media attachment per send, and rejects accompanying text for media
 kinds that cannot carry captions. Slack and Discord adapters currently support
 text only, so media markers are rejected explicitly.
 
-The current signald and WeCom WebSocket paths do not correlate provider delivery
-acknowledgments. A written request is therefore reported as **unknown**, not
-confirmed acceptance. In particular, WeCom does not fall back to another route
-after a potentially successful socket write. Signal CLI requires successful exit;
-nonzero exit is unknown because dispatch may already have occurred.
+The signald and WeCom WebSocket paths use a completed frame write as their
+transport acknowledgment. This does not prove provider or recipient delivery.
+Signal CLI requires successful exit; nonzero exit is unknown because dispatch may
+already have occurred.
 
 This change does not introduce durable outbound storage, provider receipts,
 exactly-once delivery, or automatic resumption of individual unsent parts. It adds

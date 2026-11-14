@@ -143,13 +143,18 @@ public sealed class WeComChannel : IChannelAdapter, IRestartableChannelAdapter
                 await _cts.CancelAsync();
                 if (_receiveLoop is not null)
                 {
-                    try { await _receiveLoop; }
+                    try
+                    {
+                        await _receiveLoop;
+                    }
                     catch (OperationCanceledException)
-    {
-    }
-                    catch (Exception)
-    {
-    }
+                    {
+                        _logger.LogTrace("WeCom receive loop canceled during restart.");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "WeCom receive loop exited with error during restart.");
+                    }
                 }
                 _cts.Dispose();
                 _cts = null;
@@ -805,7 +810,7 @@ public sealed class WeComChannel : IChannelAdapter, IRestartableChannelAdapter
         var reqId = "aibot_send_msg_" + Guid.NewGuid().ToString("N");
         var body = $"\"chatid\":{JsonString(recipientId)}," +
                    $"\"msgtype\":\"markdown\"," +
-                   $"\"markdown\":{{\"content\":{JsonString(TruncateToMaxUtf8Bytes(text, 20480))}}}";
+                   $"\"markdown\":{{\"content\":{JsonString(text)}}}";
         var json = BuildWsMessage("aibot_send_msg", reqId, body);
 
         return await SendWsTextAsync(json, ct);
@@ -923,7 +928,7 @@ public sealed class WeComChannel : IChannelAdapter, IRestartableChannelAdapter
 
         using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
         using var response = await _http.SendAsync(request, ct);
-        ChannelDeliveryHttp.EnsureAccepted(response);
+        ChannelDeliveryHttp.EnsurePreSendAccepted(response);
         var body = await response.Content.ReadAsStringAsync(ct);
 
         using var doc = JsonDocument.Parse(body);
@@ -974,7 +979,7 @@ public sealed class WeComChannel : IChannelAdapter, IRestartableChannelAdapter
 
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         using var response = await _http.SendAsync(request, ct);
-        ChannelDeliveryHttp.EnsureAccepted(response);
+        ChannelDeliveryHttp.EnsurePreSendAccepted(response);
         var body = await response.Content.ReadAsStringAsync(ct);
 
         using var doc = JsonDocument.Parse(body);
@@ -1026,7 +1031,7 @@ public sealed class WeComChannel : IChannelAdapter, IRestartableChannelAdapter
             {
                 var bytes = Encoding.UTF8.GetBytes(text);
                 await ws.SendAsync(bytes, WebSocketMessageType.Text, true, ct);
-                throw new ChannelDeliveryException("WeCom WebSocket frame sent without a correlated provider acknowledgment.", false, outcomeUnknown: true);
+                return true;
             }
             return false;
         }
@@ -1104,10 +1109,14 @@ public sealed class WeComChannel : IChannelAdapter, IRestartableChannelAdapter
             await _cts.CancelAsync();
             if (_receiveLoop is not null)
             {
-                try { await _receiveLoop; }
+                try
+                {
+                    await _receiveLoop;
+                }
                 catch (OperationCanceledException)
-    {
-    }
+                {
+                    _logger.LogTrace("WeCom receive loop canceled during disposal.");
+                }
             }
             _cts.Dispose();
         }

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Reflection;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using OpenClaw.Channels;
 using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Contacts;
@@ -59,6 +60,54 @@ public sealed class ChannelDeliveryContractTests
         Assert.Equal(TimeSpan.FromSeconds(7), delay);
     }
 
+    [Fact]
+    public async Task DeliverAsync_WhenDiscordRateLimitUsesJsonDelay_ShouldHonorBodyValue()
+    {
+        var calls = 0;
+        using var http = Client(_ => ++calls == 1
+            ? Reply(429, "{\"retry_after\":7}")
+            : Success("discord"));
+        await using var adapter = Create("discord", http);
+        TimeSpan? delay = null;
+
+        Assert.True(await GatewayOutboundDeliveryWorker.DeliverAsync(adapter, Message(), NullLogger.Instance,
+            TestContext.Current.CancellationToken, (duration, _) =>
+            {
+                delay = duration;
+                return Task.CompletedTask;
+            }));
+
+        Assert.Equal(2, calls);
+        Assert.Equal(TimeSpan.FromSeconds(7), delay);
+    }
+
+    [Fact]
+    public async Task SendAsync_WhenLaterDiscordChunkIsRateLimited_ShouldRetryOnlyRejectedChunk()
+    {
+        var calls = 0;
+        using var http = Client(_ => ++calls switch
+        {
+            1 => Success("discord"),
+            2 => Reply(429, "{\"retry_after\":0}"),
+            _ => Success("discord")
+        });
+        TimeSpan? delay = null;
+        await using var adapter = new DiscordChannel(
+            new DiscordChannelConfig { BotToken = "fixture" },
+            NullLogger<DiscordChannel>.Instance,
+            http,
+            (duration, _) =>
+            {
+                delay = duration;
+                return Task.CompletedTask;
+            });
+
+        await adapter.SendAsync(Message(new string('a', 3000)), TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, calls);
+        Assert.Equal(TimeSpan.Zero, delay);
+    }
+
     [Theory]
     [MemberData(nameof(HttpAdapters))]
     public async Task DeliverAsync_WhenTransportFails_ShouldNotReplayUnknownOutcome(string name)
@@ -109,7 +158,31 @@ public sealed class ChannelDeliveryContractTests
         Assert.Equal(1, error.DeliveredParts);
         Assert.False(error.CanRetry);
         Assert.Equal(status == 500, error.OutcomeUnknown);
-        Assert.Equal(2, calls);
+        Assert.Equal(name == "discord" && status == 429 ? 3 : 2, calls);
+    }
+
+    [Fact]
+    public async Task DeliverAsync_WhenProviderRetryDelayExceedsSafetyLimit_ShouldNotBlockWorker()
+    {
+        var adapter = NSubstitute.Substitute.For<IChannelAdapter>();
+        var calls = 0;
+        adapter.SendAsync(Arg.Any<OutboundMessage>(), Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            calls++;
+            return ValueTask.FromException(new ChannelDeliveryException(
+                "rate limited", true, retryAfter: TimeSpan.FromHours(1)));
+        });
+        var delayed = false;
+
+        Assert.False(await GatewayOutboundDeliveryWorker.DeliverAsync(adapter, Message(), NullLogger.Instance,
+            TestContext.Current.CancellationToken, (_, _) =>
+            {
+                delayed = true;
+                return Task.CompletedTask;
+            }));
+
+        Assert.Equal(1, calls);
+        Assert.False(delayed);
     }
 
     [Theory]
@@ -186,6 +259,49 @@ public sealed class ChannelDeliveryContractTests
         Assert.False(error.OutcomeUnknown);
         Assert.False(error.CanRetry);
         Assert.Equal(0, calls);
+    }
+
+    [Fact]
+    public async Task SendAsync_WhenFeishuTextExceedsLimit_ShouldRejectBeforeDispatch()
+    {
+        var calls = 0;
+        using var http = Client(_ =>
+        {
+            calls++;
+            return Success("feishu");
+        });
+        await using var adapter = Create("feishu", http);
+
+        var error = await Assert.ThrowsAsync<ChannelDeliveryException>(() => adapter.SendAsync(
+            Message(new string('a', 30_001)), TestContext.Current.CancellationToken).AsTask());
+
+        Assert.False(error.CanRetry);
+        Assert.False(error.OutcomeUnknown);
+        Assert.Equal(0, calls);
+    }
+
+    [Fact]
+    public async Task SendAsync_WhenSlackRejects_ShouldIncludeSafeProviderDetail()
+    {
+        using var http = Client(_ => Reply(200, "{\"ok\":false,\"error\":\"channel_not_found\"}"));
+        await using var adapter = Create("slack", http);
+
+        var error = await Assert.ThrowsAsync<ChannelDeliveryException>(() => adapter.SendAsync(
+            Message(), TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Contains("channel_not_found", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EnsurePreSendAccepted_WhenServerFails_ShouldBeRetryableKnownRejection()
+    {
+        using var response = Reply(503, "{}");
+
+        var error = Assert.Throws<ChannelDeliveryException>(() =>
+            ChannelDeliveryHttp.EnsurePreSendAccepted(response));
+
+        Assert.True(error.CanRetry);
+        Assert.False(error.OutcomeUnknown);
     }
 
     private static OutboundMessage Message(string text = "hello") => new() { ChannelId = "fixture", RecipientId = "+15551234567", Text = text };
