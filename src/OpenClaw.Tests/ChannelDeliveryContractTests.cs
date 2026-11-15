@@ -81,14 +81,47 @@ public sealed class ChannelDeliveryContractTests
         Assert.Equal(TimeSpan.FromSeconds(7), delay);
     }
 
-    [Fact]
-    public async Task SendAsync_WhenLaterDiscordChunkIsRateLimited_ShouldRetryOnlyRejectedChunk()
+    [Theory]
+    [InlineData("{\"retry_after\":null}")]
+    [InlineData("{\"retry_after\":\"7\"}")]
+    [InlineData("{\"retry_after\":true}")]
+    [InlineData("{\"retry_after\":{}}")]
+    [InlineData("{\"retry_after\":[]}")]
+    [InlineData("{\"retry_after\":-1}")]
+    [InlineData("{}")]
+    [InlineData("null")]
+    [InlineData("[]")]
+    [InlineData("7")]
+    [InlineData("invalid json")]
+    public async Task DeliverAsync_WhenDiscordRetryMetadataIsInvalid_ShouldRetryWithFallbackDelay(string body)
+    {
+        var calls = 0;
+        using var http = Client(_ => ++calls == 1 ? Reply(429, body) : Success("discord"));
+        await using var adapter = Create("discord", http);
+        TimeSpan? delay = null;
+
+        Assert.True(await GatewayOutboundDeliveryWorker.DeliverAsync(adapter, Message(), NullLogger.Instance,
+            TestContext.Current.CancellationToken, (duration, _) =>
+            {
+                delay = duration;
+                return Task.CompletedTask;
+            }));
+
+        Assert.Equal(2, calls);
+        Assert.Equal(TimeSpan.FromMilliseconds(500), delay);
+    }
+
+    [Theory]
+    [InlineData("{\"retry_after\":0}", 0)]
+    [InlineData("{\"retry_after\":null}", 500)]
+    [InlineData("[]", 500)]
+    public async Task SendAsync_WhenLaterDiscordChunkIsRateLimited_ShouldRetryOnlyRejectedChunk(string body, int delayMilliseconds)
     {
         var calls = 0;
         using var http = Client(_ => ++calls switch
         {
             1 => Success("discord"),
-            2 => Reply(429, "{\"retry_after\":0}"),
+            2 => Reply(429, body),
             _ => Success("discord")
         });
         TimeSpan? delay = null;
@@ -105,7 +138,7 @@ public sealed class ChannelDeliveryContractTests
         await adapter.SendAsync(Message(new string('a', 3000)), TestContext.Current.CancellationToken);
 
         Assert.Equal(3, calls);
-        Assert.Equal(TimeSpan.Zero, delay);
+        Assert.Equal(TimeSpan.FromMilliseconds(delayMilliseconds), delay);
     }
 
     [Theory]

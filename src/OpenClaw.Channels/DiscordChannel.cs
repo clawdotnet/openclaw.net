@@ -146,7 +146,9 @@ public sealed class DiscordChannel : IChannelAdapter
         try
         {
             using var document = JsonDocument.Parse(body);
-            if (document.RootElement.TryGetProperty("retry_after", out var value) &&
+            if (document.RootElement.ValueKind == JsonValueKind.Object &&
+                document.RootElement.TryGetProperty("retry_after", out var value) &&
+                value.ValueKind == JsonValueKind.Number &&
                 value.TryGetDouble(out var seconds) && seconds >= 0)
             {
                 if (seconds > MaximumRetryDelay.TotalSeconds)
