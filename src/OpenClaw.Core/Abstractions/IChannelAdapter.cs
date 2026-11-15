@@ -14,7 +14,8 @@ public interface IChannelAdapter : IAsyncDisposable
     Task StartAsync(CancellationToken ct);
     
     /// <summary>
-    /// Send a message through this channel. Return only after successful delivery.
+    /// Send a message through this channel. Return only after the transport accepts every part (not proof of end-user receipt).
+    /// Throw ChannelDeliverySuppressedException for deliberate policy suppression. Propagate caller cancellation.
     /// Throw ChannelDeliveryException for rejected, partial, or uncertain sends to control safe retries.
     /// </summary>
     ValueTask SendAsync(OutboundMessage message, CancellationToken ct);

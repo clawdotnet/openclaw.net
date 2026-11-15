@@ -84,11 +84,15 @@ public sealed class WeComChannel : IChannelAdapter, IRestartableChannelAdapter
 
     public WeComChannel(
         WeComChannelConfig initialConfig,
-        ILogger<WeComChannel> logger)
+        ILogger<WeComChannel> logger) : this(initialConfig, logger, null)
+    {
+    }
+
+    internal WeComChannel(WeComChannelConfig initialConfig, ILogger<WeComChannel> logger, HttpClient? http)
     {
         _initialConfig = initialConfig;
         _logger = logger;
-        _http = HttpClientFactory.Create();
+        _http = http ?? HttpClientFactory.Create();
     }
 
     public string ChannelId => "wecom";
@@ -139,9 +143,18 @@ public sealed class WeComChannel : IChannelAdapter, IRestartableChannelAdapter
                 await _cts.CancelAsync();
                 if (_receiveLoop is not null)
                 {
-                    try { await _receiveLoop; }
-                    catch (OperationCanceledException) { }
-                    catch (Exception) { }
+                    try
+                    {
+                        await _receiveLoop;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        _logger.LogTrace("WeCom receive loop canceled during restart.");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "WeCom receive loop exited with error during restart.");
+                    }
                 }
                 _cts.Dispose();
                 _cts = null;
@@ -738,70 +751,38 @@ public sealed class WeComChannel : IChannelAdapter, IRestartableChannelAdapter
 
     // ════════════════════════════ Send Message ════════════════════════════
 
-    public async ValueTask SendAsync(OutboundMessage outbound, CancellationToken ct)
+    public ValueTask SendAsync(OutboundMessage outbound, CancellationToken ct)
+    {
+        var delivery = new ChannelDeliveryAttempt();
+        return delivery.ExecuteAsync(() => SendCoreAsync(outbound, delivery, ct), ct);
+    }
+
+    private async Task SendCoreAsync(OutboundMessage outbound, ChannelDeliveryAttempt delivery, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(outbound.Text))
-            return;
-
-        try
+            throw new ChannelDeliveryException("WeCom message is empty.", false);
+        var (markers, remaining) = MediaMarkerProtocol.Extract(outbound.Text);
+        if (!string.IsNullOrWhiteSpace(remaining))
         {
-            var (markers, remaining) = MediaMarkerProtocol.Extract(outbound.Text);
-
-            // Try WebSocket reply first (valid within 24h)
-            if (!string.IsNullOrWhiteSpace(remaining))
+            var sent = await TrySendTextViaWsAsync(outbound.RecipientId, remaining, ct);
+            if (!sent)
+                sent = await TrySendTextViaActiveWsAsync(outbound.RecipientId, remaining, ct);
+            if (!sent)
             {
-                var sentViaWs = await TrySendTextViaWsAsync(outbound.RecipientId, remaining, ct);
-                if (!sentViaWs)
-                {
-                    // AI Bot proactive send should use WebSocket aibot_send_msg.
-                    var sentViaActiveWs = await TrySendTextViaActiveWsAsync(outbound.RecipientId, remaining, ct);
-                    if (!sentViaActiveWs && !HasApiCredentials())
-                    {
-                        _logger.LogWarning("WeCom REST API credentials not configured, cannot send message to {RecipientId}。", outbound.RecipientId);
-                    }
-                    else if (!sentViaActiveWs)
-                    {
-                        // Last resort: fall back to self-built app REST API; message will be sent as self-built app identity, not AI Bot.
-                        await RefreshAccessTokenAsync(ct);
-                        await SendTextViaApiAsync(outbound.RecipientId, remaining, ct);
-                    }
-                }
+                if (!HasApiCredentials())
+                    throw new ChannelDeliveryException("No WeCom delivery route is available.", false);
+                await RefreshAccessTokenAsync(ct);
+                await SendTextViaApiAsync(outbound.RecipientId, remaining, ct);
             }
-
-            // Send media (images/files, etc.)
-            if (markers.Count > 0 && HasApiCredentials())
-            {
-                foreach (var marker in markers)
-                {
-                    try
-                    {
-                        await RefreshAccessTokenAsync(ct);
-                        await SendMarkerViaApiAsync(outbound.RecipientId, marker, ct);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to send WeCom media marker {Kind}={Value}.",
-                            marker.Kind, marker.Value);
-                    }
-                }
-            }
-
-            // Fallback: when both text and markers are empty, send raw text directly
-            if (string.IsNullOrWhiteSpace(remaining) && markers.Count == 0)
-            {
-                var sentViaWs = await TrySendTextViaWsAsync(outbound.RecipientId, outbound.Text, ct);
-                if (!sentViaWs)
-                    sentViaWs = await TrySendTextViaActiveWsAsync(outbound.RecipientId, outbound.Text, ct);
-                if (!sentViaWs && HasApiCredentials())
-                {
-                    await RefreshAccessTokenAsync(ct);
-                    await SendTextViaApiAsync(outbound.RecipientId, outbound.Text, ct);
-                }
-            }
+            delivery.RecordAccepted();
         }
-        catch (Exception ex)
+        foreach (var marker in markers)
         {
-            _logger.LogError(ex, "Failed to send WeCom message to {RecipientId}.", outbound.RecipientId);
+            if (!HasApiCredentials())
+                throw new ChannelDeliveryException("WeCom media requires REST credentials.", false);
+            await RefreshAccessTokenAsync(ct);
+            await SendMarkerViaApiAsync(outbound.RecipientId, marker, ct);
+            delivery.RecordAccepted();
         }
     }
 
@@ -824,10 +805,12 @@ public sealed class WeComChannel : IChannelAdapter, IRestartableChannelAdapter
     /// <summary>Send Markdown message proactively via AI Bot WebSocket.</summary>
     private async Task<bool> TrySendTextViaActiveWsAsync(string recipientId, string text, CancellationToken ct)
     {
+        if (Encoding.UTF8.GetByteCount(text) > 20480)
+            throw new ChannelDeliveryException("WeCom message exceeds the provider text limit.", false);
         var reqId = "aibot_send_msg_" + Guid.NewGuid().ToString("N");
         var body = $"\"chatid\":{JsonString(recipientId)}," +
                    $"\"msgtype\":\"markdown\"," +
-                   $"\"markdown\":{{\"content\":{JsonString(TruncateToMaxUtf8Bytes(text, 20480))}}}";
+                   $"\"markdown\":{{\"content\":{JsonString(text)}}}";
         var json = BuildWsMessage("aibot_send_msg", reqId, body);
 
         return await SendWsTextAsync(json, ct);
@@ -838,7 +821,7 @@ public sealed class WeComChannel : IChannelAdapter, IRestartableChannelAdapter
     {
         const int maxBytes = 2048;
         if (Encoding.UTF8.GetByteCount(text) > maxBytes)
-            text = TruncateToMaxUtf8Bytes(text, maxBytes);
+            throw new ChannelDeliveryException("WeCom message exceeds the provider text limit.", false);
 
         var payload = new Dictionary<string, object>(StringComparer.Ordinal)
         {
@@ -861,9 +844,9 @@ public sealed class WeComChannel : IChannelAdapter, IRestartableChannelAdapter
             case MediaMarkerKind.ImageUrl:
                 {
                     var data = await FetchMediaBytesAsync(marker, ct);
-                    if (data is null) return;
+                    if (data is null) throw new ChannelDeliveryException("Media could not be loaded.", false);
                     var mediaId = await UploadMediaAsync(data, "image", ct);
-                    if (mediaId is null) return;
+                    if (string.IsNullOrWhiteSpace(mediaId)) throw new ChannelDeliveryException("Media upload was rejected.", false);
 
                     var payload = new Dictionary<string, object>(StringComparer.Ordinal)
                     {
@@ -881,9 +864,9 @@ public sealed class WeComChannel : IChannelAdapter, IRestartableChannelAdapter
             case MediaMarkerKind.FileUrl:
                 {
                     var data = await FetchMediaBytesAsync(marker, ct);
-                    if (data is null) return;
+                    if (data is null) throw new ChannelDeliveryException("Media could not be loaded.", false);
                     var mediaId = await UploadMediaAsync(data, "file", ct);
-                    if (mediaId is null) return;
+                    if (string.IsNullOrWhiteSpace(mediaId)) throw new ChannelDeliveryException("Media upload was rejected.", false);
 
                     var payload = new Dictionary<string, object>(StringComparer.Ordinal)
                     {
@@ -899,7 +882,8 @@ public sealed class WeComChannel : IChannelAdapter, IRestartableChannelAdapter
 
             case MediaMarkerKind.AudioUrl:
             case MediaMarkerKind.VideoUrl:
-                break;
+            default:
+                throw new ChannelDeliveryException("Unsupported WeCom media type.", false);
         }
     }
 
@@ -911,10 +895,12 @@ public sealed class WeComChannel : IChannelAdapter, IRestartableChannelAdapter
         request.Content = new StringContent(json, Encoding.UTF8, "application/json");
 
         using var response = await _http.SendAsync(request, ct);
-        if (!response.IsSuccessStatusCode)
+        await ChannelDeliveryHttp.RequireZeroCodeAsync(response, "errcode", ct);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        foreach (var field in new[] { "invaliduser", "invalidparty", "invalidtag" })
         {
-            var errBody = await response.Content.ReadAsStringAsync(ct);
-            _logger.LogWarning("WeCom API call failed: {Status} {Body}", response.StatusCode, errBody);
+            if (document.RootElement.TryGetProperty(field, out var rejected) && !string.IsNullOrWhiteSpace(rejected.GetString()))
+                throw new ChannelDeliveryException("WeCom reported invalid recipients.", false, outcomeUnknown: true);
         }
     }
 
@@ -942,6 +928,7 @@ public sealed class WeComChannel : IChannelAdapter, IRestartableChannelAdapter
 
         using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
         using var response = await _http.SendAsync(request, ct);
+        ChannelDeliveryHttp.EnsurePreSendAccepted(response);
         var body = await response.Content.ReadAsStringAsync(ct);
 
         using var doc = JsonDocument.Parse(body);
@@ -962,6 +949,10 @@ public sealed class WeComChannel : IChannelAdapter, IRestartableChannelAdapter
             return marker.Kind is MediaMarkerKind.ImagePath or MediaMarkerKind.FilePath
                 ? await File.ReadAllBytesAsync(marker.Value, ct)
                 : await _http.GetByteArrayAsync(marker.Value, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -988,6 +979,7 @@ public sealed class WeComChannel : IChannelAdapter, IRestartableChannelAdapter
 
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         using var response = await _http.SendAsync(request, ct);
+        ChannelDeliveryHttp.EnsurePreSendAccepted(response);
         var body = await response.Content.ReadAsStringAsync(ct);
 
         using var doc = JsonDocument.Parse(body);
@@ -1041,10 +1033,6 @@ public sealed class WeComChannel : IChannelAdapter, IRestartableChannelAdapter
                 await ws.SendAsync(bytes, WebSocketMessageType.Text, true, ct);
                 return true;
             }
-            return false;
-        }
-        catch (Exception)
-        {
             return false;
         }
         finally
@@ -1121,8 +1109,14 @@ public sealed class WeComChannel : IChannelAdapter, IRestartableChannelAdapter
             await _cts.CancelAsync();
             if (_receiveLoop is not null)
             {
-                try { await _receiveLoop; }
-                catch (OperationCanceledException) { }
+                try
+                {
+                    await _receiveLoop;
+                }
+                catch (OperationCanceledException)
+                {
+                    _logger.LogTrace("WeCom receive loop canceled during disposal.");
+                }
             }
             _cts.Dispose();
         }
@@ -1134,5 +1128,7 @@ public sealed class WeComChannel : IChannelAdapter, IRestartableChannelAdapter
 // ════════════════════════════ JSON Serialization (AOT-safe) ════════════════════════════
 
 [JsonSerializable(typeof(Dictionary<string, object>))]
+[JsonSerializable(typeof(int))]
+[JsonSerializable(typeof(string))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 public partial class WeComJsonContext : JsonSerializerContext;

@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.WebSockets;
 using System.Text.Json;
 using OpenClaw.Channels;
+using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Security;
 using Xunit;
@@ -565,7 +566,7 @@ public sealed class WebSocketChannelTests
     }
 
     [Fact]
-    public async Task SendAsync_RemoveConnectionWhileSecondSendWaits_DoesNotThrow()
+    public async Task SendAsync_WhenConnectionRemovedWhileWaiting_ShouldRejectUnsentMessage()
     {
         var channel = new WebSocketChannel(new WebSocketConfig());
         var ws = new TestWebSocket();
@@ -592,6 +593,9 @@ public sealed class WebSocketChannelTests
         channel.RemoveConnectionForTest("a");
         ws.ReleaseBlockedSend();
 
-        await Task.WhenAll(firstSend, secondSend);
+        var interrupted = await Assert.ThrowsAsync<ChannelDeliveryException>(() => firstSend);
+        Assert.True(interrupted.OutcomeUnknown);
+        var error = await Assert.ThrowsAsync<ChannelDeliveryException>(() => secondSend);
+        Assert.False(error.OutcomeUnknown);
     }
 }

@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using OpenClaw.Channels;
+using OpenClaw.Core.Abstractions;
 using OpenClaw.Core.Contacts;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Pipeline;
@@ -288,12 +289,12 @@ public sealed class TwilioSmsTests
 
         var channel = new TwilioSmsChannel(config, "token", contacts, http);
 
-        await channel.SendAsync(new OutboundMessage
+        await Assert.ThrowsAsync<ChannelDeliverySuppressedException>(() => channel.SendAsync(new OutboundMessage
         {
             ChannelId = "sms",
             RecipientId = "+15551234567",
             Text = "hi"
-        }, TestContext.Current.CancellationToken);
+        }, TestContext.Current.CancellationToken).AsTask());
 
         Assert.Null(handler.LastBody);
     }

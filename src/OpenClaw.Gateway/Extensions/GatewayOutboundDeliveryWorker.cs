@@ -8,6 +8,8 @@ namespace OpenClaw.Gateway.Extensions;
 
 internal sealed class GatewayOutboundDeliveryWorker
 {
+    private static readonly TimeSpan MaximumRetryDelay = TimeSpan.FromMinutes(5);
+
     public void Start(
         IHostApplicationLifetime lifetime,
         ILogger logger,
@@ -68,6 +70,11 @@ internal sealed class GatewayOutboundDeliveryWorker
                 await adapter.SendAsync(outbound, ct);
                 return true;
             }
+            catch (ChannelDeliverySuppressedException ex)
+            {
+                logger.LogInformation("Outbound send suppressed for {ChannelId}: {Reason}", outbound.ChannelId, ex.Message);
+                return false;
+            }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
                 throw;
@@ -86,7 +93,7 @@ internal sealed class GatewayOutboundDeliveryWorker
                     outbound.ChannelId, ex.DeliveredParts, ex.OutcomeUnknown);
                 return false;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (ChannelDeliveryException ex) when (ex.CanRetry)
             {
                 if (attempt == maxDeliveryAttempts)
                 {
@@ -94,13 +101,25 @@ internal sealed class GatewayOutboundDeliveryWorker
                     return false;
                 }
                 logger.LogWarning(ex, "Outbound send failed for channel {ChannelId}, retrying…", outbound.ChannelId);
-                var delay = ex is ChannelDeliveryException { RetryAfter: { } retryAfter } && retryAfter > TimeSpan.Zero
+                var delay = ex.RetryAfter is { } retryAfter && retryAfter > TimeSpan.Zero
                     ? retryAfter
                     : TimeSpan.FromMilliseconds(500);
+                if (delay > MaximumRetryDelay)
+                {
+                    logger.LogError(ex,
+                        "Outbound send for channel {ChannelId} requested a retry delay of {RetryDelay}, exceeding the {MaximumRetryDelay} safety limit; not retrying.",
+                        outbound.ChannelId, delay, MaximumRetryDelay);
+                    return false;
+                }
                 if (retryDelay is not null)
                     await retryDelay(delay, ct);
                 else
                     await DelayWithCancellationAsync(delay, ct);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Unclassified outbound failure for {ChannelId}; outcome unknown, not retrying.", outbound.ChannelId);
+                return false;
             }
         }
         return false;

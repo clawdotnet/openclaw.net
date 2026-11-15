@@ -916,9 +916,8 @@ async function handleRequest(req) {
       const attachments = req.params?.attachments ?? null;
       const ch = registeredChannels.get(channelId);
       if (!ch) throw new Error(`Unknown channel: ${channelId}`);
-      if (typeof ch.send === "function") {
-        await ch.send({ channelId, recipientId, accountId, text, sessionId, replyToMessageId, subject, attachments });
-      }
+      if (typeof ch.send !== "function") throw new Error(`Channel has no send handler: ${channelId}`);
+      await ch.send({ channelId, recipientId, accountId, text, sessionId, replyToMessageId, subject, attachments });
       return { ok: true };
     }
 

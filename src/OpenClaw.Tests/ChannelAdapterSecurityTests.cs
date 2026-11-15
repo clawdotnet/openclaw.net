@@ -5,6 +5,8 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 using OpenClaw.Channels;
+using OpenClaw.Core.Abstractions;
+using OpenClaw.Gateway.Extensions;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Pipeline;
 using OpenClaw.Core.Security;
@@ -182,14 +184,14 @@ public sealed class ChannelAdapterSecurityTests
             NullLogger<DiscordChannel>.Instance,
             http);
 
-        await channel.SendAsync(
+        Assert.True(await GatewayOutboundDeliveryWorker.DeliverAsync(channel,
             new OutboundMessage
             {
                 ChannelId = "discord",
                 RecipientId = "123",
                 Text = "hello"
             },
-            TestContext.Current.CancellationToken);
+            NullLogger.Instance, TestContext.Current.CancellationToken));
 
         Assert.Equal(2, requestCount);
     }
@@ -245,7 +247,7 @@ public sealed class ChannelAdapterSecurityTests
             http,
             NullLogger<WhatsAppChannel>.Instance);
 
-        await Assert.ThrowsAsync<HttpRequestException>(() => channel.SendAsync(
+        await Assert.ThrowsAsync<ChannelDeliveryException>(() => channel.SendAsync(
             new OutboundMessage
             {
                 ChannelId = "whatsapp",
@@ -268,7 +270,7 @@ public sealed class ChannelAdapterSecurityTests
             http,
             NullLogger<WhatsAppChannel>.Instance);
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => channel.SendAsync(
+        var ex = await Assert.ThrowsAsync<ChannelDeliveryException>(() => channel.SendAsync(
             new OutboundMessage
             {
                 ChannelId = "whatsapp",

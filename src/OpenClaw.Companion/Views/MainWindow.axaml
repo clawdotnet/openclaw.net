@@ -1089,7 +1089,6 @@
 									<StackPanel  Spacing="6"><TextBlock Text="Bridge URL" Classes="muted" FontSize="12" /><TextBox Text="{Binding WhatsAppBridgeUrl}" AutomationProperties.Name="Bridge URL" PlaceholderText="Built-in bridge URL" /></StackPanel>
 									<StackPanel  Spacing="6"><TextBlock Text="Bridge token" Classes="muted" FontSize="12" /><TextBox Text="{Binding WhatsAppBridgeToken}" PasswordChar="•" AutomationProperties.Name="Bridge token" PlaceholderText="Built-in bridge token" /></StackPanel>
 									<StackPanel  Spacing="6"><TextBlock Text="Bridge token reference" Classes="muted" FontSize="12" /><TextBox Text="{Binding WhatsAppBridgeTokenRef}" AutomationProperties.Name="Bridge token reference" PlaceholderText="env:WHATSAPP_BRIDGE_TOKEN" /></StackPanel>
-									<CheckBox Content="Suppress bridge send exceptions" IsChecked="{Binding WhatsAppBridgeSuppressSendExceptions}" />
 								</StackPanel>
 							</Border>
 						</Grid>
