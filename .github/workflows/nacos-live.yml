@@ -42,6 +42,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          problem-matcher: true
       - name: Install native toolchain and pinned Router
         run: |
           bash .github/scripts/install-nativeaot-prereqs.sh
