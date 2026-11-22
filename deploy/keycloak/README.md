@@ -44,14 +44,16 @@ dotnet run --project ../../src/OpenClaw.Gateway
 ```
 
 网关启动后，在另一个终端从仓库根目录进入 `deploy/keycloak`，再运行多角色验证。
-脚本退出时会撤销本次新增的角色映射：
+脚本会尝试撤销本次新增的角色映射。如果 Keycloak 的 DELETE 请求失败，映射仍会保留，
+脚本会保留 `cleanup.json` 并打印 realm、用户和手动恢复步骤。按提示完成恢复并确认映射
+已移除后，再重启网关：
 
 ```bash
 cd deploy/keycloak
 ./scripts/verify-multi-role.sh http://localhost:18789   # 多角色不降级（真机）
 ```
 
-验证完成并清理角色映射后，停止网关并使用上面的常规启动命令重启
+验证完成并确认角色映射已清理后，停止网关并使用上面的常规启动命令重启
 （`RoleClaim=operator_role`），恢复种子管理员的正常角色解析。
 
 控制台 <http://localhost:8081>，管理员账号在 `deploy/keycloak/.env`。
