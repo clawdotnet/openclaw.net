@@ -6,12 +6,50 @@ Keycloak 作为 openclaw.net 的**用户与角色唯一来源**。可运行的�
 cd deploy/keycloak
 ./scripts/up.sh                    # 生成 .env → 起 Keycloak → 等就绪 → 修补 realm
 ./scripts/verify.sh                # 验证 issuer / JWKS / claim
-./scripts/verify.sh http://localhost:18789   # 连上 openclaw 一并验证角色
-# 停掉现有网关后，在终端 1 重新启动：
-OpenClaw__Security__Oidc__RoleClaim=realm_roles dotnet run --project ../../src/OpenClaw.Gateway
-# 在终端 2 执行多角色验证：
+```
+
+使用本节下面的 OIDC 配置先启动网关（初始 `RoleClaim=operator_role`），再验证通常
+角色映射：
+
+```bash
+OpenClaw__Security__AuthMode=oidc \
+OpenClaw__Security__AlwaysRequireAuth=true \
+OpenClaw__Security__Oidc__Authority=http://localhost:8081/realms/openclaw \
+OpenClaw__Security__Oidc__Audience=openclaw \
+OpenClaw__Security__Oidc__RequireHttpsMetadata=false \
+OpenClaw__Security__Oidc__RoleClaim=operator_role \
+OpenClaw__Security__AllowQueryStringToken=true \
+dotnet run --project ../../src/OpenClaw.Gateway
+```
+
+另开终端运行常规验证，然后停止网关：
+
+```bash
+./scripts/verify.sh http://localhost:18789
+```
+
+重启网关进行多角色验证。这里保留完整 OIDC 配置，只将 `RoleClaim` 改为
+`realm_roles`：
+
+```bash
+OpenClaw__Security__AuthMode=oidc \
+OpenClaw__Security__AlwaysRequireAuth=true \
+OpenClaw__Security__Oidc__Authority=http://localhost:8081/realms/openclaw \
+OpenClaw__Security__Oidc__Audience=openclaw \
+OpenClaw__Security__Oidc__RequireHttpsMetadata=false \
+OpenClaw__Security__Oidc__RoleClaim=realm_roles \
+OpenClaw__Security__AllowQueryStringToken=true \
+dotnet run --project ../../src/OpenClaw.Gateway
+```
+
+网关启动后，在另一个终端按顺序运行多角色验证。脚本退出时会撤销本次新增的角色映射：
+
+```bash
 ./scripts/verify-multi-role.sh http://localhost:18789   # 多角色不降级（真机）
 ```
+
+验证完成并清理角色映射后，停止网关并使用上面的常规启动命令重启
+（`RoleClaim=operator_role`），恢复种子管理员的正常角色解析。
 
 控制台 <http://localhost:8081>，管理员账号在 `deploy/keycloak/.env`。
 

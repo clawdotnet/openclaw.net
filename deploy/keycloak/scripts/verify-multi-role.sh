@@ -54,6 +54,7 @@ WORK=$(mktemp -d "./.kc-multi-XXXXXX")
 GRANT_CLEANUP=false
 cleanup() {
   local status=$?
+  local cleanup_succeeded=true
   trap - EXIT HUP INT TERM
   if [ "$GRANT_CLEANUP" = true ] && [ -s "$WORK/cleanup.json" ]; then
     local code
@@ -64,12 +65,20 @@ cleanup() {
     if [ "$code" != "204" ]; then
       echo "清理本次新增 realm role mapping 失败（HTTP ${code}）" >&2
       [ ! -s "$WORK/cleanup-response.txt" ] || sed 's/^/  /' "$WORK/cleanup-response.txt" >&2
+      cleanup_succeeded=false
       [ "$status" -ne 0 ] || status=1
     else
       echo "已清理本次新增的 realm role mapping"
     fi
   fi
-  rm -rf "$WORK"
+  if [ "$cleanup_succeeded" = true ]; then
+    rm -rf "$WORK"
+  else
+    echo "realm '${REALM}' 中用户 '${USER_NAME}'（${USER_ID}）的测试角色映射尚未清理。" >&2
+    echo "已保留清理清单：${PWD}/${WORK}/cleanup.json" >&2
+    echo "恢复：在 Keycloak 管理控制台打开 realm '${REALM}'、用户 '${USER_NAME}' 的 Role mapping，" >&2
+    echo "仅移除清单中的映射；确认移除后再删除目录：${PWD}/${WORK}" >&2
+  fi
   exit "$status"
 }
 trap cleanup EXIT
@@ -77,9 +86,10 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-PASS=0 FAILED=0
+PASS=0 FAILED=0 INCONCLUSIVE=0
 ok()   { printf '  \033[32mOK  \033[0m %s\n' "$1"; PASS=$((PASS+1)); }
 bad()  { printf '  \033[31mFAIL\033[0m %s\n' "$1"; FAILED=$((FAILED+1)); }
+inconclusive() { printf '  \033[33mINCONCLUSIVE\033[0m %s\n' "$1"; INCONCLUSIVE=$((INCONCLUSIVE+1)); }
 hdr()  { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
 hdr "0. 准备：拿 admin token"
@@ -255,7 +265,7 @@ else
 
   case "$CODE" in
     404) ok "admin 通过权限判定（404=无此审批单，符合预期）" ;;
-    400) ok "admin 请求被 requester-match 策略要求提供 requester identity" ;;
+    400) inconclusive "admin 探测缺少 requester identity，未验证角色授权" ;;
     403)
       bad "admin 被拒（403）—— 多角色聚合没生效"
       sed 's/^/     /' "$WORK/gw.txt" >&2
@@ -290,7 +300,7 @@ else
       "${GATEWAY}/tools/approve?approvalId=multi-role-probe&approved=true" 2>/dev/null || echo 000)
     case "$CODE" in
       403) ok "viewer 被拒（403）—— 说明上一步的 404 确实来自 admin 角色" ;;
-      400) ok "requester-match 策略要求 requester identity（400），本次无法比较角色" ;;
+      400) inconclusive "viewer 探测缺少 requester identity，未验证角色授权" ;;
       404) bad "viewer 也拿到 404 —— 权限校验被整体跳过，这是越权漏洞" ;;
       401) bad "401 —— 网关验签配置问题" ;;
       000) bad "连不上 ${GATEWAY}" ;;
@@ -300,10 +310,13 @@ else
 fi
 
 echo
-if [ "$FAILED" -eq 0 ]; then
+if [ "$FAILED" -gt 0 ]; then
+  printf '\033[31m%d 项失败\033[0m，%d 项通过，%d 项无法判定\n' "$FAILED" "$PASS" "$INCONCLUSIVE"
+  exit 1
+elif [ "$INCONCLUSIVE" -gt 0 ]; then
+  printf '\033[33m结果无法判定\033[0m（%d 项通过，%d 项无法判定）\n' "$PASS" "$INCONCLUSIVE"
+  exit 2
+else
   printf '\033[32m全部通过\033[0m（%d 项）\n' "$PASS"
   exit 0
-else
-  printf '\033[31m%d 项失败\033[0m，%d 项通过\n' "$FAILED" "$PASS"
-  exit 1
 fi

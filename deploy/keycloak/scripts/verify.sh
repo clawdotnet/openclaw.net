@@ -36,9 +36,10 @@ GATEWAY="${1:-}"
 WORK=$(mktemp -d "./.kc-verify-XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 
-PASS=0 FAILED=0
+PASS=0 FAILED=0 INCONCLUSIVE=0
 ok()   { printf '  \033[32mOK  \033[0m %s\n' "$1"; PASS=$((PASS+1)); }
 bad()  { printf '  \033[31mFAIL\033[0m %s\n' "$1"; FAILED=$((FAILED+1)); }
+inconclusive() { printf '  \033[33mINCONCLUSIVE\033[0m %s\n' "$1"; INCONCLUSIVE=$((INCONCLUSIVE+1)); }
 hdr()  { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
 # 种子用户口令与 realm 文件一致；上线前应改掉，那时用环境变量覆盖
@@ -161,7 +162,7 @@ if [ -n "$GATEWAY" ]; then
       "${GATEWAY}/tools/approve?approvalId=probe&approved=true" 2>/dev/null || echo 000)
     case "$CODE" in
       403) ok "operator 被拒（403），角色下限生效" ;;
-      400) ok "requester-match 策略要求 requester identity（400），本次无法比较角色" ;;
+      400) inconclusive "operator 探测缺少 requester identity，未验证角色授权" ;;
       000) bad "连不上 ${GATEWAY}" ;;
       404) bad "operator 竟然通过了 admin 判定（404=权限已过），角色映射有问题" ;;
       405) bad "operator 请求 405：/tools/approve 是 POST 路由，方法用错了" ;;
@@ -176,7 +177,7 @@ if [ -n "$GATEWAY" ]; then
     case "$CODE" in
       # 404 说明已通过 admin 权限判定，只是这个审批 id 不存在 —— 期望结果
       404) ok "admin 通过权限判定（404=无此审批单，符合预期）" ;;
-      400) ok "admin 请求被 requester-match 策略要求提供 requester identity" ;;
+      400) inconclusive "admin 探测缺少 requester identity，未验证角色授权" ;;
       403) bad "admin 被拒（403），operator_role=admin 没生效" ;;
       000) bad "连不上 ${GATEWAY}" ;;
       405) bad "admin 请求 405：方法用错了，应为 POST" ;;
@@ -209,10 +210,13 @@ else
 fi
 
 echo
-if [ "$FAILED" -eq 0 ]; then
+if [ "$FAILED" -gt 0 ]; then
+  printf '\033[31m%d 项失败\033[0m，%d 项通过，%d 项无法判定\n' "$FAILED" "$PASS" "$INCONCLUSIVE"
+  exit 1
+elif [ "$INCONCLUSIVE" -gt 0 ]; then
+  printf '\033[33m结果无法判定\033[0m（%d 项通过，%d 项无法判定）\n' "$PASS" "$INCONCLUSIVE"
+  exit 2
+else
   printf '\033[32m全部通过\033[0m（%d 项）\n' "$PASS"
   exit 0
-else
-  printf '\033[31m%d 项失败\033[0m，%d 项通过\n' "$FAILED" "$PASS"
-  exit 1
 fi
