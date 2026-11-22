@@ -428,7 +428,10 @@ public sealed class SecurityConfig
     /// </summary>
     public string AuthMode { get; set; } = SecurityAuthModeNames.Token;
 
-    /// <summary>OIDC configuration. Only used when <see cref="AuthMode"/> is "oidc".</summary>
+    /// <summary>
+    /// OIDC configuration. Also enables JWT authentication alongside token mode when
+    /// <see cref="OidcConfig.Authority"/> is configured.
+    /// </summary>
     public OidcConfig Oidc { get; set; } = new();
 
     /// <summary>
@@ -480,7 +483,10 @@ public static class SecurityAuthModeNames
     public const string Oidc = "oidc";
 }
 
-/// <summary>OIDC / JWT Bearer configuration. Used when <see cref="SecurityConfig.AuthMode"/> is "oidc".</summary>
+/// <summary>
+/// OIDC / JWT Bearer configuration. Used in OIDC mode, or alongside token mode when
+/// <see cref="Authority"/> is configured.
+/// </summary>
 public sealed class OidcConfig
 {
     /// <summary>
@@ -496,8 +502,8 @@ public sealed class OidcConfig
     public bool RequireHttpsMetadata { get; set; } = true;
 
     /// <summary>
-    /// JWT claim name to extract the operator role from. Default "roles".
-    /// The claim value is mapped to an <see cref="OpenClaw.Core.Models.OperatorRoleNames"/> value.
+    /// JWT claim name to extract operator roles from. Default "roles".
+    /// When the claim has multiple values, the highest recognized operator role is used.
     /// </summary>
     public string RoleClaim { get; set; } = "roles";
 }

@@ -49,15 +49,12 @@ public static class OperatorRoleNames
         if (roles is null)
             return best;
 
-        foreach (var candidate in roles)
+        foreach (var candidate in roles.Where(static candidate => !string.IsNullOrWhiteSpace(candidate)))
         {
-            if (string.IsNullOrWhiteSpace(candidate))
-                continue;
-
-            var trimmed = candidate.Trim();
+            var normalized = candidate!.Trim().ToLowerInvariant();
             // Only exact known names count; anything else is ignored so it cannot
             // outrank a real role (and cannot lower one either).
-            var rank = trimmed.ToLowerInvariant() switch
+            var rank = normalized switch
             {
                 Admin => Rank(Admin),
                 Operator => Rank(Operator),
@@ -68,7 +65,7 @@ public static class OperatorRoleNames
             if (rank > bestRank)
             {
                 bestRank = rank;
-                best = trimmed.ToLowerInvariant();
+                best = normalized;
             }
         }
 
@@ -92,7 +89,6 @@ public static class OperatorRoleNames
             _ => 1
         };
 }
-
 
 public static class OrganizationAuthModeNames
 {

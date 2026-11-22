@@ -43,7 +43,7 @@ public sealed class OidcServiceRegistrationTests
         };
 
     [Fact]
-    public void OidcMode_WithoutAuthority_ThrowsInsteadOfFailingDeepInPipeline()
+    public void AddOpenClawSecurityServices_WhenOidcAuthorityIsMissing_ShouldThrowActionableError()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -60,7 +60,7 @@ public sealed class OidcServiceRegistrationTests
     }
 
     [Fact]
-    public void OidcMode_WithWhitespaceAuthority_AlsoThrows()
+    public void AddOpenClawSecurityServices_WhenOidcAuthorityIsWhitespace_ShouldThrow()
     {
         // IsNullOrWhiteSpace is the actual predicate used elsewhere; a blank-but-
         // present value must not be treated as configured.
@@ -73,7 +73,7 @@ public sealed class OidcServiceRegistrationTests
     }
 
     [Fact]
-    public void TokenMode_WithoutAuthority_DoesNotThrow()
+    public void AddOpenClawSecurityServices_WhenTokenModeHasNoAuthority_ShouldNotThrow()
     {
         // Control case: the guard must only fire for OIDC mode. Token mode has
         // always worked without an Authority and must keep working.
@@ -85,7 +85,7 @@ public sealed class OidcServiceRegistrationTests
     }
 
     [Fact]
-    public void OidcMode_WithAuthority_RegistersAuthenticationSchemeProvider()
+    public void AddOpenClawSecurityServices_WhenOidcAuthorityIsConfigured_ShouldRegisterAuthentication()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -102,7 +102,7 @@ public sealed class OidcServiceRegistrationTests
     }
 
     [Fact]
-    public void TokenMode_WithAuthority_StillRegistersJwtBearer()
+    public void AddOpenClawSecurityServices_WhenTokenModeHasAuthority_ShouldRegisterJwtBearer()
     {
         // Hybrid mode documented in docs/AUTHENTICATION.md Scenario 4: AuthMode is
         // "token" but an Authority is set so JWT callers are also accepted.
@@ -123,7 +123,7 @@ public sealed class OidcServiceRegistrationTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void OidcAudience_WhenBlank_DisablesAudienceValidation(string? audience)
+    public void AddOpenClawSecurityServices_WhenAudienceIsBlank_ShouldDisableAudienceValidation(string? audience)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -145,7 +145,7 @@ public sealed class OidcServiceRegistrationTests
     }
 
     [Fact]
-    public void OidcAudience_WhenConfigured_PreservesAudienceValidation()
+    public void AddOpenClawSecurityServices_WhenAudienceIsConfigured_ShouldPreserveAudienceValidation()
     {
         const string audience = "openclaw";
         var services = new ServiceCollection();

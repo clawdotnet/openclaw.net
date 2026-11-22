@@ -202,10 +202,10 @@ Unable to validate audience. validationParameters.ValidAudience is null or white
 TOKEN=$(curl -s -X POST "$KC/realms/$REALM/protocol/openid-connect/token" \
   --data-urlencode grant_type=password --data-urlencode client_id=openclaw-verify \
   --data-urlencode username=demo --data-urlencode password=*** --data-urlencode scope=openid \
-  | python -c 'import json,sys;print(json.load(sys.stdin)["access_token"])')
+  | python3 -c 'import json,sys;print(json.load(sys.stdin)["access_token"])')
 
 # 2) 确认 claim 真的在
-python -c "
+python3 -c "
 import base64,json
 t='$TOKEN'; seg=t.split('.')[1]; seg+='='*(-len(seg)%4)
 p=json.loads(base64.urlsafe_b64decode(seg))
@@ -230,7 +230,8 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 | `operator` | 403 | `Endpoint 'admin.approvals.override' requires role 'admin'.` |
 
 当 `RequireRequesterMatchForHttpToolApproval=true` 时，这些探测未提供 requester identity，
-端点会在角色专属的审批处理前返回 400。验证脚本会接受该结果，但此模式下无法比较角色。
+端点会在角色专属的审批处理前返回 400。验证脚本会将结果报告为无法判定并以状态码 2
+退出，因为此模式下无法比较角色。
 
 ### 4.1 多角色不降级的真机验证
 
@@ -265,7 +266,7 @@ realm_roles = [viewer, admin, openclaw_admin]
 ## 5. 其它必须知道的差异
 
 - **`supabase.auth.*` 那套 API 不适用**：OpenClaw.NET 没有 Supabase SDK 依赖。
-  登录由前端用 `keycloak-js` 完成，后端只验 token。
+  内置 Web Chat 使用带 PKCE 的 OIDC authorization-code 流程，后端只验证取得的 token。
 - **WebSocket 需要 `AllowQueryStringToken`**：浏览器 WebSocket 不能带自定义头。
   开了之后可以 `wss://host/ws?token=<jwt>`；生产上要评估 URL 泄漏风险。
 - **登出不吊销 token**：Keycloak 删用户或登出后，已签发的 token 在 `exp` 前仍然有效

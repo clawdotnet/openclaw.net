@@ -11,7 +11,7 @@ cd "$(dirname "$0")/.."
 ENV_FILE="${ENV_FILE:-.env}"
 
 env_get() {
-  python - "$ENV_FILE" "$1" <<'PY'
+  python3 - "$ENV_FILE" "$1" <<'PY'
 import re, sys
 try:
     text = open(sys.argv[1], encoding="utf-8").read()
@@ -52,7 +52,7 @@ token_for() {
   curl -fsS --max-time 15 -X POST "${KC_URL}/realms/${REALM}/protocol/openid-connect/token" \
     --data-urlencode "grant_type=password" --data-urlencode "client_id=openclaw-verify" \
     --data-urlencode "username=$1" --data-urlencode "password=$2" --data-urlencode "scope=openid" \
-    | python -c 'import json,sys;print(json.load(sys.stdin)["access_token"])' 2>/dev/null
+    | python3 -c 'import json,sys;print(json.load(sys.stdin)["access_token"])' 2>/dev/null
 }
 
 hdr "1. discovery 与 issuer"
@@ -63,7 +63,7 @@ if ! curl -fsS --max-time 10 \
   echo "     Keycloak 起来了吗？docker logs openclaw-keycloak --tail 40" >&2
   exit 1
 fi
-ISSUER=$(python -c "import json;print(json.load(open('$WORK/oidc.json'))['issuer'])")
+ISSUER=$(python3 -c "import json;print(json.load(open('$WORK/oidc.json'))['issuer'])")
 
 # issuer 里的 /auth 前缀是 Keycloak 17+ 已去掉的老路径
 case "$ISSUER" in
@@ -84,7 +84,7 @@ fi
 hdr "2. JWKS 非对称且带 kid"
 
 if curl -fsS --max-time 10 "${KC_URL}/realms/${REALM}/protocol/openid-connect/certs" -o "$WORK/jwks.json"; then
-  if KEYCLOAK_FIXTURE_JWKS="$WORK/jwks.json" python -c '
+  if KEYCLOAK_FIXTURE_JWKS="$WORK/jwks.json" python3 -c '
 import json, os, sys
 keys = json.load(open(os.environ["KEYCLOAK_FIXTURE_JWKS"])).get("keys") or []
 signing = [k for k in keys if k.get("use", "sig") == "sig" and k.get("alg", "").startswith(("RS", "ES", "PS"))]
@@ -108,7 +108,7 @@ hdr "3. token 里的 claim（openclaw 靠这三个认人）"
 if OP_TOKEN=$(token_for "$OP_USER" "$OP_PASS"); then
   ok "取到 operator 的 token"
 
-  if KC_TOKEN="$OP_TOKEN" python -c '
+  if KC_TOKEN="$OP_TOKEN" python3 -c '
 import base64, json, os, sys, uuid
 t = os.environ["KC_TOKEN"]
 seg = t.split(".")[1]; seg += "=" * (-len(seg) % 4)
@@ -191,7 +191,7 @@ if [ -n "$GATEWAY" ]; then
   CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${GATEWAY}/api/contracts" 2>/dev/null || echo 000)
   [ "$CODE" = "401" ] && ok "无 token → 401" || bad "无 token 返回 ${CODE}，期望 401"
 
-  FORGED=$(OP_TOKEN="${OP_TOKEN:-}" python -c "
+  FORGED=$(OP_TOKEN="${OP_TOKEN:-}" python3 -c "
 import os
 t = os.environ.get('OP_TOKEN', '')
 if not t:

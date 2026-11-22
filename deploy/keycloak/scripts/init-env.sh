@@ -14,7 +14,7 @@ if [ -f "$ENV_FILE" ] && [ "$FORCE" != "--force" ]; then
   exit 0
 fi
 
-rand() { python -c "import secrets,sys; print(secrets.token_urlsafe(int(sys.argv[1])))" "$1"; }
+rand() { python3 -c "import secrets,sys; print(secrets.token_urlsafe(int(sys.argv[1])))" "$1"; }
 
 ADMIN_PASSWORD=$(rand 18)
 DB_PASSWORD=$(rand 24)

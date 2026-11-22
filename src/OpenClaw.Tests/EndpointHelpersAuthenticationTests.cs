@@ -182,7 +182,7 @@ public sealed class EndpointHelpersAuthenticationTests : IDisposable
     }
 
     [Fact]
-    public void AuthorizeOperatorRequest_WhenTokenCarriesMultipleRoles_ResolvesHighest()
+    public void AuthorizeOperatorRequest_WhenTokenCarriesMultipleRoles_ShouldResolveHighest()
     {
         // End-to-end guard for the silent-downgrade bug: goes through the real
         // claim-reading path rather than calling OperatorRoleNames directly, so
@@ -202,7 +202,7 @@ public sealed class EndpointHelpersAuthenticationTests : IDisposable
     }
 
     [Fact]
-    public void AuthorizeOperatorRequest_WhenAdminIsNotFirstClaim_StillResolvesAdmin()
+    public void AuthorizeOperatorRequest_WhenAdminIsNotFirstClaim_ShouldStillResolveAdmin()
     {
         // The original bug: admin was listed second and never reached.
         // Unknown names (like Keycloak realm roles "app_admin") are ignored by
@@ -221,7 +221,7 @@ public sealed class EndpointHelpersAuthenticationTests : IDisposable
     }
 
     [Fact]
-    public void AuthorizeOperatorRequest_WhenOnlyUnknownRoles_StaysViewer()
+    public void AuthorizeOperatorRequest_WhenOnlyUnknownRoles_ShouldStayViewer()
     {
         var (startup, context) = CreateMultiRoleOidcRequest(
             roleClaim: "realm_roles",
@@ -238,7 +238,7 @@ public sealed class EndpointHelpersAuthenticationTests : IDisposable
     }
 
     [Fact]
-    public void AuthorizeOperatorRequest_WhenRoleClaimMissing_FallsBackToViewer()
+    public void AuthorizeOperatorRequest_WhenRoleClaimIsMissing_ShouldFallBackToViewer()
     {
         var (startup, context) = CreateMultiRoleOidcRequest(
             roleClaim: "realm_roles",
@@ -253,7 +253,7 @@ public sealed class EndpointHelpersAuthenticationTests : IDisposable
     }
 
     [Fact]
-    public void AuthorizeOperatorRequest_WhenStandardRoleClaimUsed_ResolvesHighest()
+    public void AuthorizeOperatorRequest_WhenStandardRoleClaimIsUsed_ShouldResolveHighest()
     {
         // Fallback branch: no custom RoleClaim values, but ClaimTypes.Role present.
         var (startup, context) = CreateMultiRoleOidcRequest(

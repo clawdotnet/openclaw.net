@@ -10,6 +10,15 @@ cd "$(dirname "$0")/.."
 
 step() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 
+if docker compose version >/dev/null 2>&1; then
+    COMPOSE=(docker compose)
+elif command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE=(docker-compose)
+else
+    echo "未找到 Docker Compose。请安装 docker compose 插件或 docker-compose。" >&2
+    exit 1
+fi
+
 step "1/4 准备 .env"
 ./scripts/init-env.sh
 
@@ -17,7 +26,7 @@ step "1/4 准备 .env"
 set -a; . ./.env; set +a
 
 step "2/4 启动 Keycloak"
-docker compose up -d
+"${COMPOSE[@]}" up -d
 
 step "3/4 等待就绪（不能探 8080，health 在 9000）"
 ./scripts/wait-keycloak.sh "http://localhost:${KEYCLOAK_MGMT_PORT:-9000}/health/ready" 180
@@ -49,7 +58,7 @@ cat <<EOF
 
   方式二（仅 Linux）：把 openclaw 也放进容器
 
-    docker compose -f docker-compose.yml -f docker-compose.openclaw.yml up -d
+    ${COMPOSE[*]} -f docker-compose.yml -f docker-compose.openclaw.yml up -d
 
 \033[1m验证\033[0m
 

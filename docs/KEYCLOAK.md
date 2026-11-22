@@ -211,10 +211,10 @@ Verify with a real token after configuring. Do not stop at "sign-in succeeded".
 TOKEN=$(curl -s -X POST "$KC/realms/$REALM/protocol/openid-connect/token" \
   --data-urlencode grant_type=password --data-urlencode client_id=openclaw-verify \
   --data-urlencode username=demo --data-urlencode password=*** --data-urlencode scope=openid \
-  | python -c 'import json,sys;print(json.load(sys.stdin)["access_token"])')
+  | python3 -c 'import json,sys;print(json.load(sys.stdin)["access_token"])')
 
 # 2) Confirm the claim is actually there
-python -c "
+python3 -c "
 import base64,json
 t='$TOKEN'; seg=t.split('.')[1]; seg+='='*(-len(seg)%4)
 p=json.loads(base64.urlsafe_b64decode(seg))
@@ -239,8 +239,8 @@ Measured result (`operator_role` switched from operator to admin for the same us
 | `operator` | 403 | `Endpoint 'admin.approvals.override' requires role 'admin'.` |
 
 With `RequireRequesterMatchForHttpToolApproval=true`, these probes omit requester identity
-and return 400 before role-specific approval handling. The verification scripts accept this
-as expected but cannot compare roles in that mode.
+and return 400 before role-specific approval handling. The verification scripts report the
+result as inconclusive and exit with status 2 because they cannot compare roles in that mode.
 
 ### 4.1 Live verification that multiple roles are not downgraded
 
@@ -276,7 +276,8 @@ disabled entirely.
 ## 5. Other differences you need to know
 
 - **The `supabase.auth.*` API does not apply**: OpenClaw.NET has no Supabase SDK dependency.
-  Sign-in happens in the front end via `keycloak-js`; the backend only validates tokens.
+  The built-in web chat uses an OIDC authorization-code flow with PKCE; the backend only
+  validates the resulting tokens.
 - **WebSocket needs `AllowQueryStringToken`**: browsers cannot set custom headers on a
   WebSocket handshake. Once enabled you can use `wss://host/ws?token=<jwt>`; evaluate the
   URL-leak risk for production.

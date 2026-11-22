@@ -86,7 +86,7 @@ OpenClaw.NET 不声明完整符合 OAuth 2.1，不提供通用 OAuth 授权服�
   3. 中间件（`Program.cs` 第 89-99 行）将 `?token=` 自动转换为 `Authorization: Bearer` 头
   4. `UseAuthentication()` 中间件验证 JWT 签名、签发者、受众、过期时间
   5. 验证通过后，`ctx.User` 被填充，`EndpointHelpers` 从中提取角色和身份信息
-- **角色提取**：从 JWT 的 `RoleClaim` 对应声明中提取，默认为 `"roles"` 声明
+- **角色提取**：读取 JWT 中所有 `RoleClaim` 对应声明（默认为 `"roles"`），从已知的 `viewer` / `operator` / `admin` 值中取最高权限；缺失或全部未知时按 `viewer` 处理
 - **身份信息**：`sub` → AccountId，`preferred_username` → Username，`name` → DisplayName
 
 ### 2.3 Bootstrap 令牌
@@ -323,20 +323,36 @@ if (startup.Config.Security.IsOidcMode
 ### 4.3 JWT Bearer 配置
 
 ```csharp
-// SecurityServicesExtensions.cs 第 15-26 行
+// SecurityServicesExtensions.cs
 var hasOidcAuthority = !string.IsNullOrWhiteSpace(startup.Config.Security.Oidc.Authority);
-if (startup.Config.Security.IsOidcMode || hasOidcAuthority)
+if (startup.Config.Security.IsOidcMode && !hasOidcAuthority)
+{
+    throw new InvalidOperationException("Security.AuthMode is oidc but Security.Oidc.Authority is empty.");
+}
+
+if (hasOidcAuthority)
 {
     services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         .AddJwtBearer(options =>
         {
             options.Authority = startup.Config.Security.Oidc.Authority;
-            options.Audience = startup.Config.Security.Oidc.Audience;
             options.RequireHttpsMetadata = startup.Config.Security.Oidc.RequireHttpsMetadata;
+
+            if (string.IsNullOrWhiteSpace(startup.Config.Security.Oidc.Audience))
+            {
+                options.TokenValidationParameters.ValidateAudience = false;
+            }
+            else
+            {
+                options.Audience = startup.Config.Security.Oidc.Audience;
+            }
         });
     services.AddAuthorization();
 }
 ```
+
+因此，OIDC 模式缺少 Authority 时会立即报出配置错误。Audience 留空会显式关闭
+audience 校验；配置了 Audience 时仍会强制校验。
 
 ---
 

@@ -24,7 +24,7 @@ ENV_FILE="${ENV_FILE:-.env}"
 [ -f "$ENV_FILE" ] || { echo "找不到 $ENV_FILE，先跑 ./scripts/up.sh" >&2; exit 1; }
 
 env_get() {
-  python - "$ENV_FILE" "$1" <<'PY'
+  python3 - "$ENV_FILE" "$1" <<'PY'
 import re, sys
 try:
     text = open(sys.argv[1], encoding="utf-8").read()
@@ -97,7 +97,7 @@ hdr "0. 准备：拿 admin token"
 AT=$(curl -fsS --max-time 15 -X POST "${KC_URL}/realms/master/protocol/openid-connect/token" \
   --data-urlencode "grant_type=password" --data-urlencode "client_id=admin-cli" \
   --data-urlencode "username=${ADMIN}" --data-urlencode "password=${ADMIN_PW}" \
-  | python -c 'import json,sys;print(json.load(sys.stdin)["access_token"])') \
+  | python3 -c 'import json,sys;print(json.load(sys.stdin)["access_token"])') \
   || { echo "取 admin token 失败，检查 .env 里的 KEYCLOAK_ADMIN_PASSWORD" >&2; exit 1; }
 ok "拿到 admin token"
 
@@ -131,7 +131,7 @@ hdr "2. 给测试用户同时授予 viewer + admin（构造真实多值 token）
 USER_NAME="${MULTI_ROLE_USER:-demo-admin}"
 USER_ID=$(curl -fsS --max-time 10 -H "Authorization: Bearer $AT" \
   "${KC_URL}/admin/realms/${REALM}/users?username=${USER_NAME}&exact=true" \
-  | python -c 'import json,sys;u=json.load(sys.stdin);print(u[0]["id"] if u else "")')
+  | python3 -c 'import json,sys;u=json.load(sys.stdin);print(u[0]["id"] if u else "")')
 
 if [ -z "$USER_ID" ]; then
   bad "找不到用户 ${USER_NAME}"
@@ -144,7 +144,7 @@ curl -fsS --max-time 10 -H "Authorization: Bearer $AT" \
 curl -fsS --max-time 10 -H "Authorization: Bearer $AT" \
   "${KC_URL}/admin/realms/${REALM}/roles/admin" -o "$WORK/r_admin.json"
 
-python - "$WORK" <<'PY'
+python3 - "$WORK" <<'PY'
 import json, sys, os
 w = sys.argv[1]
 roles = [json.load(open(os.path.join(w, "r_viewer.json"), encoding="utf-8")),
@@ -157,7 +157,7 @@ curl -fsS --max-time 10 -H "Authorization: Bearer $AT" \
   "${KC_URL}/admin/realms/${REALM}/users/${USER_ID}/role-mappings/realm" \
   -o "$WORK/existing-mappings.json"
 
-python - "$WORK" <<'PY'
+python3 - "$WORK" <<'PY'
 import json, os, sys
 w = sys.argv[1]
 targets = json.load(open(os.path.join(w, "grant.json"), encoding="utf-8"))
@@ -182,11 +182,11 @@ TOKEN=$(curl -fsS --max-time 15 -X POST "${KC_URL}/realms/${REALM}/protocol/open
   --data-urlencode "grant_type=password" --data-urlencode "client_id=openclaw-verify" \
   --data-urlencode "username=${USER_NAME}" --data-urlencode "password=${MULTI_ROLE_PASS:-change-me-admin}" \
   --data-urlencode "scope=openid" \
-  | python -c 'import json,sys;print(json.load(sys.stdin)["access_token"])') \
+  | python3 -c 'import json,sys;print(json.load(sys.stdin)["access_token"])') \
   || { bad "取用户 token 失败（口令被改过？用 MULTI_ROLE_PASS 覆盖）"; exit 1; }
 
 print_token_roles() {
-  KC_TOKEN="$1" python -c '
+  KC_TOKEN="$1" python3 -c '
 import base64, json, os, sys
 t = os.environ["KC_TOKEN"]
 seg = t.split(".")[1]; seg += "=" * (-len(seg) % 4)
@@ -209,7 +209,7 @@ else
     *) bad "数组里没有 admin，无法验证降级问题" ;;
   esac
   # Require a recognized lower role before admin so the first-claim regression is deterministic.
-  if python -c '
+  if python3 -c '
 import sys
 roles = sys.argv[1].split()
 admin_index = roles.index("admin") if "admin" in roles else -1
@@ -223,7 +223,7 @@ fi
 
 hdr "4. 用同一份 token 判定最高档位（与 EndpointHelpers 同一条逻辑）"
 
-KC_TOKEN="$TOKEN" python -c '
+KC_TOKEN="$TOKEN" python3 -c '
 import base64, json, os, sys
 
 t = os.environ["KC_TOKEN"]
@@ -290,7 +290,7 @@ else
     --data-urlencode "grant_type=password" --data-urlencode "client_id=openclaw-verify" \
     --data-urlencode "username=${VUSER}" --data-urlencode "password=${MULTI_ROLE_VIEWER_PASS:-change-me-viewer}" \
     --data-urlencode "scope=openid" \
-    | python -c 'import json,sys;print(json.load(sys.stdin)["access_token"])' 2>/dev/null || true)
+    | python3 -c 'import json,sys;print(json.load(sys.stdin)["access_token"])' 2>/dev/null || true)
 
   if [ -z "$VTOKEN" ]; then
     bad "取 viewer 用户 token 失败"

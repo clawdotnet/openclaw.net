@@ -10,18 +10,9 @@ namespace OpenClaw.Tests;
 /// Pins how role claims from an external IdP (Keycloak in practice) are resolved
 /// into an <see cref="OperatorRoleNames"/> value.
 ///
-/// Why this matters: EndpointHelpers reads the role with
-/// <c>ctx.User.FindFirstValue(Oidc.RoleClaim)</c>, which returns only the FIRST
-/// claim of that type. Keycloak emits realm roles as a JSON array, and the JWT
-/// handler flattens arrays into one claim per element — so a user holding
-/// ["app_user", "app_admin"] resolves to "app_user" and, since
-/// <see cref="OperatorRoleNames.Normalize"/> maps unknown values to viewer,
-/// that admin is silently downgraded to viewer and cannot even chat.
-///
-/// Consequence for configuration (documented in docs/AUTHENTICATION.md): the
-/// Keycloak side must emit a single-valued claim for the operator role. These
-/// tests pin that a single value works and that the multi-value case is the
-/// trap — so a future change to role resolution has to face the trade-off.
+/// Keycloak can emit realm roles as a JSON array, and the JWT handler flattens
+/// arrays into one claim per element. These tests pin the fail-closed mapping
+/// and the order-independent highest-role behavior used by EndpointHelpers.
 /// </summary>
 public sealed class OidcRoleClaimResolutionTests
 {
@@ -43,7 +34,7 @@ public sealed class OidcRoleClaimResolutionTests
     [InlineData("admin", OperatorRoleNames.Admin)]
     [InlineData("operator", OperatorRoleNames.Operator)]
     [InlineData("viewer", OperatorRoleNames.Viewer)]
-    public void SingleValuedRoleClaim_MapsToExpectedRole(string claimValue, string expectedRole)
+    public void Normalize_WhenRoleClaimIsSingleValued_ShouldMapExpectedRole(string claimValue, string expectedRole)
     {
         var principal = PrincipalFromToken($$"""{"sub":"u1","roles":"{{claimValue}}"}""");
 
@@ -52,7 +43,7 @@ public sealed class OidcRoleClaimResolutionTests
     }
 
     [Fact]
-    public void SingleValuedCustomClaimName_IsWhatKeycloakMustEmit()
+    public void Normalize_WhenCustomClaimIsSingleValued_ShouldMapKeycloakRole()
     {
         // The recommended Keycloak setup: a dedicated single-valued claim
         // (e.g. "operator_role") populated from a realm role via a
@@ -64,7 +55,7 @@ public sealed class OidcRoleClaimResolutionTests
     }
 
     [Fact]
-    public void ArrayRoleClaim_HighestRoleWins_AdminIsNotLost()
+    public void FromRoles_WhenArrayContainsAdmin_ShouldSelectHighestRole()
     {
         // Regression guard for the silent-downgrade bug.
         //
@@ -84,7 +75,7 @@ public sealed class OidcRoleClaimResolutionTests
     }
 
     [Fact]
-    public void ArrayRoleClaim_OrderDoesNotMatter()
+    public void FromRoles_WhenArrayOrderChanges_ShouldReturnSameRole()
     {
         // The same set in the opposite order must resolve identically; otherwise
         // the result depends on token serialization order.
@@ -98,7 +89,7 @@ public sealed class OidcRoleClaimResolutionTests
     }
 
     [Fact]
-    public void UnknownRoleNames_AreIgnored_NotMappedToAdmin()
+    public void FromRoles_WhenNamesAreUnknown_ShouldIgnoreThemWithoutPromotion()
     {
         // Free-form names must never be guessed at. "app_admin" is NOT "admin";
         // a fuzzy match would also promote "app_administrator" or "not_admin".
@@ -115,7 +106,7 @@ public sealed class OidcRoleClaimResolutionTests
     }
 
     [Fact]
-    public void EmptyOrAllUnknownRoleSet_StillFailsClosedToViewer()
+    public void FromRoles_WhenRolesAreEmptyOrUnknown_ShouldFailClosedToViewer()
     {
         // Authorization must never open up because a claim was empty. Note
         // FromRoles(null) also yields viewer, so a provider that omits the claim
@@ -131,7 +122,7 @@ public sealed class OidcRoleClaimResolutionTests
     }
 
     [Fact]
-    public void CaseAndWhitespaceVariants_AreRecognized()
+    public void FromRoles_WhenCaseOrWhitespaceVaries_ShouldRecognizeKnownRoles()
     {
         // IdPs are inconsistent about casing; "Admin" and " ADMIN " must not
         // collapse to viewer.
@@ -141,7 +132,7 @@ public sealed class OidcRoleClaimResolutionTests
     }
 
     [Fact]
-    public void MissingRoleClaim_DowngradesToViewer()
+    public void Normalize_WhenRoleClaimIsMissing_ShouldFailClosedToViewer()
     {
         // docs/AUTHENTICATION.md: "A JWT without the configured RoleClaim
         // resolves to viewer and cannot chat." Pinned so the failure mode is
@@ -154,7 +145,7 @@ public sealed class OidcRoleClaimResolutionTests
     }
 
     [Fact]
-    public void KeycloakDefaultClaims_MapToAccountIdAndUsername()
+    public void ClaimsPrincipal_WhenKeycloakClaimsArePresent_ShouldMapIdentityFields()
     {
         // EndpointHelpers prefers ClaimTypes.NameIdentifier then "sub" for
         // AccountId, and preferred_username for Username. Keycloak's default

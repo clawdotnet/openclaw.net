@@ -24,7 +24,7 @@ ENV_FILE="${ENV_FILE:-.env}"
 [ -f "$ENV_FILE" ] || { echo "找不到 $ENV_FILE，先跑 scripts/init-env.sh" >&2; exit 1; }
 
 env_get() {
-  python - "$ENV_FILE" "$1" <<'PY'
+  python3 - "$ENV_FILE" "$1" <<'PY'
 import re, sys
 try:
     text = open(sys.argv[1], encoding="utf-8").read()
@@ -52,7 +52,7 @@ ADMIN_PW="${KEYCLOAK_ADMIN_PASSWORD:-$(env_get KEYCLOAK_ADMIN_PASSWORD)}"
 TOKEN=$(curl -fsS --max-time 15 -X POST "${KC_URL}/realms/master/protocol/openid-connect/token" \
   --data-urlencode "grant_type=password" --data-urlencode "client_id=admin-cli" \
   --data-urlencode "username=${ADMIN}" --data-urlencode "password=${ADMIN_PW}" \
-  | python -c 'import json,sys;print(json.load(sys.stdin)["access_token"])') \
+  | python3 -c 'import json,sys;print(json.load(sys.stdin)["access_token"])') \
   || { echo "取 admin token 失败，检查 KEYCLOAK_ADMIN / KEYCLOAK_ADMIN_PASSWORD" >&2; exit 1; }
 
 WORK=$(mktemp -d "./.kc-work-XXXXXX")
@@ -62,7 +62,7 @@ curl -fsS --max-time 15 -H "Authorization: Bearer $TOKEN" \
   "${KC_URL}/admin/realms/${REALM}/users/profile" -o "$WORK/profile.json" \
   || { echo "拉不到 realm ${REALM} 的 user profile" >&2; exit 1; }
 
-PROFILE_FILE="$WORK/profile.json" WORK_DIR="$WORK" python - <<'PY'
+PROFILE_FILE="$WORK/profile.json" WORK_DIR="$WORK" python3 - <<'PY'
 import json, os, sys
 
 path = os.environ["PROFILE_FILE"]
@@ -95,7 +95,7 @@ fi
 # 复核 + 检查种子用户的 attribute 是否真的存下来了
 curl -fsS --max-time 15 -H "Authorization: Bearer $TOKEN" \
   "${KC_URL}/admin/realms/${REALM}/users/profile" \
-  | python -c '
+  | python3 -c '
 import json, sys
 cfg = json.load(sys.stdin)
 policy = cfg.get("unmanagedAttributePolicy")
@@ -107,7 +107,7 @@ echo
 echo "检查种子用户的 operator_role："
 curl -fsS --max-time 15 -H "Authorization: Bearer $TOKEN" \
   "${KC_URL}/admin/realms/${REALM}/users?max=20" \
-  | python -c '
+  | python3 -c '
 import json, sys
 users = json.load(sys.stdin)
 if not users:
