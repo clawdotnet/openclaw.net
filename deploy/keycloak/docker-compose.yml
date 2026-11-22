@@ -1,0 +1,86 @@
+# Keycloak：OpenClaw 的用户与角色来源。
+#
+#   cd deploy/keycloak
+#   ./scripts/up.sh            # 生成 .env、起 Keycloak、导 realm、打印配置
+#   ./scripts/verify.sh        # 用真实 token 验证 claim 与角色映射
+#
+# 控制台 http://localhost:8081   管理员账号见 .env
+#
+# ── 为什么 openclaw 不放在这个 compose 里 ────────────────────────
+# OIDC 有一条硬约束：openclaw 的 Oidc.Authority、浏览器访问地址、token 里的 iss
+# 三者必须**逐字相同**，否则 JwtBearer 会以 issuer 不匹配拒掉所有 token
+# （报 IDX10211 / "invalid issuer"）。
+#
+# 而 docker 容器里的 localhost 指向容器自己，解析不到宿主机端口。实测过这些
+# 组合都不可靠：
+#   · --hostname=http://keycloak:8080  → 浏览器解析不到 keycloak
+#   · extra_hosts 覆盖 localhost       → /etc/hosts 里 127.0.0.1 优先级更高
+#   · --hostname=keycloak（只给 host） → issuer 变成 keycloak:8081，浏览器失败
+#
+# 所以这里只放 Keycloak，openclaw 跑在宿主机（与本仓 deploy/docker-compose/openbao.yml
+# 的约定一致：工具容器在 compose 里，openclaw 本地运行）。此时
+# Authority / 浏览器地址 / iss 三者天然都是 http://localhost:8081。
+#
+# 确实要把 openclaw 也放进容器？用 docker-compose.openclaw.yml 覆盖文件，
+# 它用 host 网络并附了说明。
+
+name: openclaw-keycloak
+
+services:
+  keycloak-db:
+    image: postgres:17-alpine
+    container_name: openclaw-keycloak-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?run scripts/init-env.sh first}
+    volumes:
+      - keycloak-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: openclaw-keycloak
+    restart: unless-stopped
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    command:
+      - start
+      # 完整对外地址。这个值决定 token 里的 iss，必须与 openclaw 的
+      # Oidc.Authority、浏览器地址栏三方逐字一致。
+      - --hostname=${KEYCLOAK_PUBLIC_URL:-http://localhost:8081}
+      # 反代后面必须开；否则 iss 会退化成容器内地址，表现为"验签通过但 issuer 不匹配"
+      - --proxy-headers=xforwarded
+      - --http-enabled=true
+      - --http-port=8080
+      - --health-enabled=true
+      # 启动时导入 realm（已存在则跳过，不覆盖线上改过的配置）
+      - --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?run scripts/init-env.sh first}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+      KC_HEALTH_ENABLED: "true"
+      # 反代终止 TLS 时保持 false；否则 Host 头校验会与健康探针打架
+      KC_HOSTNAME_STRICT: "false"
+    volumes:
+      - ./realm:/opt/keycloak/data/import:ro
+    ports:
+      # 浏览器登录跳转必须能直达
+      - "127.0.0.1:${KEYCLOAK_HTTP_PORT:-8081}:8080"
+      # /health/ready 在管理口 9000，不在 8080。只绑 loopback，仅供本机探活。
+      - "127.0.0.1:${KEYCLOAK_MGMT_PORT:-9000}:9000"
+    # 不写 healthcheck：Keycloak 26 基于 ubi-micro，镜像内没有 curl/wget/bash，
+    # 任何依赖它们的探活都会永远 unhealthy。就绪判断用 scripts/wait-keycloak.sh。
+
+volumes:
+  keycloak-db-data:

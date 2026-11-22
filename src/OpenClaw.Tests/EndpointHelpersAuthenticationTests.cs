@@ -180,4 +180,139 @@ public sealed class EndpointHelpersAuthenticationTests : IDisposable
             context.Request.Headers.Authorization = authorization;
         return (startup, context);
     }
+
+    [Fact]
+    public void AuthorizeOperatorRequest_WhenTokenCarriesMultipleRoles_ShouldResolveHighest()
+    {
+        // End-to-end guard for the silent-downgrade bug: goes through the real
+        // claim-reading path rather than calling OperatorRoleNames directly, so
+        // reverting FindFirstValue back into EndpointHelpers fails this test.
+        var (startup, context) = CreateMultiRoleOidcRequest(
+            roleClaim: "realm_roles",
+            roles: ["app_user", OperatorRoleNames.Operator, OperatorRoleNames.Admin],
+            storagePath: _storagePath);
+
+        var auth = EndpointHelpers.AuthorizeOperatorRequest(
+            context, startup,
+            context.RequestServices.GetRequiredService<BrowserSessionAuthService>(), requireCsrf: false);
+
+        Assert.True(auth.IsAuthorized);
+        Assert.Equal(OperatorRoleNames.Admin, auth.Role);
+        Assert.True(OperatorRoleNames.CanAccess(auth.Role, OperatorRoleNames.Admin));
+    }
+
+    [Fact]
+    public void AuthorizeOperatorRequest_WhenAdminIsNotFirstClaim_ShouldStillResolveAdmin()
+    {
+        // The original bug: admin was listed second and never reached.
+        // Unknown names (like Keycloak realm roles "app_admin") are ignored by
+        // design — the IdP must map them onto viewer/operator/admin through a
+        // dedicated single-valued claim. See docs/KEYCLOAK.md.
+        var (startup, context) = CreateMultiRoleOidcRequest(
+            roleClaim: "roles",
+            roles: [OperatorRoleNames.Viewer, OperatorRoleNames.Admin],
+            storagePath: _storagePath);
+
+        var auth = EndpointHelpers.AuthorizeOperatorRequest(
+            context, startup,
+            context.RequestServices.GetRequiredService<BrowserSessionAuthService>(), requireCsrf: false);
+
+        Assert.Equal(OperatorRoleNames.Admin, auth.Role);
+    }
+
+    [Fact]
+    public void AuthorizeOperatorRequest_WhenOnlyUnknownRoles_ShouldStayViewer()
+    {
+        var (startup, context) = CreateMultiRoleOidcRequest(
+            roleClaim: "realm_roles",
+            roles: ["app_user", "some_other_role"],
+            storagePath: _storagePath);
+
+        var auth = EndpointHelpers.AuthorizeOperatorRequest(
+            context, startup,
+            context.RequestServices.GetRequiredService<BrowserSessionAuthService>(), requireCsrf: false);
+
+        // Fail closed: unknown role names must not grant operator/admin.
+        Assert.Equal(OperatorRoleNames.Viewer, auth.Role);
+        Assert.False(OperatorRoleNames.CanAccess(auth.Role, OperatorRoleNames.Operator));
+    }
+
+    [Fact]
+    public void AuthorizeOperatorRequest_WhenRoleClaimIsMissing_ShouldFallBackToViewer()
+    {
+        var (startup, context) = CreateMultiRoleOidcRequest(
+            roleClaim: "realm_roles",
+            roles: [],
+            storagePath: _storagePath);
+
+        var auth = EndpointHelpers.AuthorizeOperatorRequest(
+            context, startup,
+            context.RequestServices.GetRequiredService<BrowserSessionAuthService>(), requireCsrf: false);
+
+        Assert.Equal(OperatorRoleNames.Viewer, auth.Role);
+    }
+
+    [Fact]
+    public void AuthorizeOperatorRequest_WhenStandardRoleClaimIsUsed_ShouldResolveHighest()
+    {
+        // Fallback branch: no custom RoleClaim values, but ClaimTypes.Role present.
+        var (startup, context) = CreateMultiRoleOidcRequest(
+            roleClaim: "custom_role",
+            roles: [],
+            standardRoles: [OperatorRoleNames.Operator, OperatorRoleNames.Admin],
+            storagePath: _storagePath);
+
+        var auth = EndpointHelpers.AuthorizeOperatorRequest(
+            context, startup,
+            context.RequestServices.GetRequiredService<BrowserSessionAuthService>(), requireCsrf: false);
+
+        Assert.Equal(OperatorRoleNames.Admin, auth.Role);
+    }
+
+    private static (GatewayStartupContext Startup, DefaultHttpContext Context) CreateMultiRoleOidcRequest(
+        string roleClaim,
+        string[] roles,
+        string[]? standardRoles = null,
+        string storagePath = "")
+    {
+        var config = new GatewayConfig();
+        config.Security.AuthMode = SecurityAuthModeNames.Oidc;
+        config.Security.Oidc.Authority = "https://issuer.example";
+        config.Security.Oidc.RoleClaim = roleClaim;
+
+        var startup = new GatewayStartupContext
+        {
+            Config = config,
+            RuntimeState = RuntimeModeResolver.Resolve(config.Runtime, dynamicCodeSupported: true),
+            IsNonLoopbackBind = true
+        };
+
+        var claims = new List<Claim> { new("sub", "multi-role-subject") };
+        // One claim per array element — this is what the JWT handler produces for
+        // a JSON array claim, and what made FindFirstValue order-dependent.
+        claims.AddRange(roles.Select(r => new Claim(roleClaim, r)));
+        if (standardRoles is not null)
+            claims.AddRange(standardRoles.Select(r => new Claim(ClaimTypes.Role, r)));
+
+        // AuthorizeOperatorRequest reaches for OrganizationPolicyService and
+        // OperatorAccountService through ctx.RequestServices, so the context needs
+        // a real container.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(config);
+        services.AddSingleton(new OperatorAccountService(
+            string.IsNullOrEmpty(storagePath) ? Path.GetTempPath() : storagePath,
+            NullLogger<OperatorAccountService>.Instance));
+        services.AddSingleton(new OrganizationPolicyService(
+            string.IsNullOrEmpty(storagePath) ? Path.GetTempPath() : storagePath,
+            NullLogger<OrganizationPolicyService>.Instance));
+        services.AddSingleton(new BrowserSessionAuthService(config));
+
+        var context = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(claims, "oidc")),
+            RequestServices = services.BuildServiceProvider()
+        };
+        return (startup, context);
+    }
 }

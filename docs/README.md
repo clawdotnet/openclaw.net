@@ -105,6 +105,7 @@ Use this page as the map. If you are unsure where to go next, the groups below a
 | [COMPATIBILITY.md](COMPATIBILITY.md) | Supported upstream skill, plugin, and channel surface. |
 | [sandboxing.md](sandboxing.md) | Optional sandbox execution backends. |
 | [DOCKERHUB.md](DOCKERHUB.md) | Official container image reference. |
+| [KEYCLOAK.md](KEYCLOAK.md) | Keycloak as the user/role source: OIDC config, required claims, role resolution, and the pitfalls that produce silent viewer downgrades. ([简体中文](zh-CN/KEYCLOAK.md)) |
 | [build/dashboard-assets.md](build/dashboard-assets.md) | Gateway Dashboard asset build and publish behavior. |
 | [deployment/TAILSCALE.md](deployment/TAILSCALE.md) | Tailscale Serve/Funnel patterns and private runtime access security notes. |
 | [PRODUCTION_FIXES.md](PRODUCTION_FIXES.md) | Known production-readiness fixes and their verification. |

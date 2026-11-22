@@ -127,9 +127,17 @@ internal static class EndpointHelpers
             var displayName = ctx.User.FindFirstValue("name")
                               ?? ctx.User.FindFirstValue(ClaimTypes.GivenName)
                               ?? username;
-            var rawRole = ctx.User.FindFirstValue(startup.Config.Security.Oidc.RoleClaim)
-                          ?? ctx.User.FindFirstValue(ClaimTypes.Role);
-            var role = OperatorRoleNames.Normalize(rawRole);
+            // Read EVERY value of the role claim, not just the first one.
+            // Identity providers emit several roles per user (Keycloak realm roles,
+            // multiple `roles` claims); FindFirstValue returns whichever the token
+            // happened to list first, which silently downgraded admins to viewer.
+            // A missing claim still resolves to viewer (fail closed).
+            var roleClaims = ctx.User.FindAll(startup.Config.Security.Oidc.RoleClaim)
+                .Select(c => c.Value);
+            if (!roleClaims.Any())
+                roleClaims = ctx.User.FindAll(ClaimTypes.Role).Select(c => c.Value);
+
+            var role = OperatorRoleNames.FromRoles(roleClaims);
             return new OperatorAuthorizationResult(
                 true,
                 OrganizationAuthModeNames.OidcJwt,

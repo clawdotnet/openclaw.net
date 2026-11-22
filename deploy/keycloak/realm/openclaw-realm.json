@@ -1,0 +1,265 @@
+{
+  "realm": "openclaw",
+  "enabled": true,
+  "displayName": "OpenClaw",
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "roles": {
+    "realm": [
+      {
+        "name": "openclaw_viewer",
+        "description": "只读：可查看状态与历史，不能发起对话"
+      },
+      {
+        "name": "openclaw_operator",
+        "description": "常规操作：可发起对话、使用已授权的工具"
+      },
+      {
+        "name": "openclaw_admin",
+        "description": "管理员：可改设置、审批工具调用、管理设备"
+      }
+    ]
+  },
+  "clientScopes": [
+    {
+      "name": "openclaw-claims",
+      "description": "openclaw.net 需要的 claim：sub / operator_role / email / preferred_username",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "sub",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-sub-mapper",
+          "consentRequired": false,
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "operator_role",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "operator_role",
+            "claim.name": "operator_role",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "openclaw_roles_hint",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "realm_roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "email",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "email",
+            "claim.name": "email",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "preferred_username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "username",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "openclaw",
+      "name": "OpenClaw Gateway（浏览器登录）",
+      "description": "Public client + PKCE。前端用 keycloak-js 登录，token 交给 openclaw.net 验签。",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:18789/*",
+        "http://127.0.0.1:18789/*"
+      ],
+      "webOrigins": [
+        "http://localhost:18789",
+        "http://127.0.0.1:18789"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:18789/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "aud-openclaw",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "openclaw",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "openclaw-verify",
+      "name": "仅供脚本验证（password grant）",
+      "description": "scripts/verify.sh 用它直取 token。生产环境请禁用或删除此 client。",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:18789/*"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "protocolMappers": [
+        {
+          "name": "aud-openclaw",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "openclaw",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "id": "a0000000-0000-4000-8000-000000000001",
+      "username": "demo-operator",
+      "enabled": true,
+      "email": "demo-operator@example.com",
+      "emailVerified": true,
+      "firstName": "Demo",
+      "lastName": "Operator",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "change-me-operator",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "openclaw_operator"
+      ],
+      "attributes": {
+        "operator_role": [
+          "operator"
+        ]
+      },
+      "requiredActions": []
+    },
+    {
+      "id": "a0000000-0000-4000-8000-000000000002",
+      "username": "demo-admin",
+      "enabled": true,
+      "email": "demo-admin@example.com",
+      "emailVerified": true,
+      "firstName": "Demo",
+      "lastName": "Admin",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "change-me-admin",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "openclaw_admin"
+      ],
+      "attributes": {
+        "operator_role": [
+          "admin"
+        ]
+      },
+      "requiredActions": []
+    },
+    {
+      "id": "a0000000-0000-4000-8000-000000000003",
+      "username": "demo-viewer",
+      "enabled": true,
+      "email": "demo-viewer@example.com",
+      "emailVerified": true,
+      "firstName": "Demo",
+      "lastName": "Viewer",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "change-me-viewer",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "openclaw_viewer"
+      ],
+      "attributes": {
+        "operator_role": [
+          "viewer"
+        ]
+      },
+      "requiredActions": []
+    }
+  ],
+  "attributes": {
+    "userProfileEnabled": "true"
+  },
+  "defaultDefaultClientScopes": [
+    "openclaw-claims"
+  ],
+  "defaultOptionalClientScopes": []
+}

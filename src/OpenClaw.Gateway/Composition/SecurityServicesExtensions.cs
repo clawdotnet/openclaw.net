@@ -23,16 +23,43 @@ internal static class SecurityServicesExtensions
         // Register OIDC/JWT Bearer authentication when an OIDC Authority is configured,
         // regardless of AuthMode. This allows JWT tokens (e.g. from the web chat's
         // OIDC login) to be validated even when AuthMode is "token".
-        // Require non-blank Authority even when IsOidcMode is true; fail fast otherwise.
         var hasOidcAuthority = !string.IsNullOrWhiteSpace(startup.Config.Security.Oidc.Authority);
+        if (startup.Config.Security.IsOidcMode && !hasOidcAuthority)
+        {
+            // Program.cs calls UseAuthentication() whenever IsOidcMode is true, which
+            // requires IAuthenticationSchemeProvider to be registered here. Without this
+            // check the host fails deep inside the middleware pipeline with
+            // "UnableToResolveService, ...IAuthenticationSchemeProvider" — an error that
+            // points nowhere near the actual cause (an empty Oidc.Authority).
+            throw new InvalidOperationException(
+                "Security.AuthMode is \"oidc\" but Security.Oidc.Authority is empty. " +
+                "Set it to the provider's issuer URL (for Keycloak: " +
+                "https://<keycloak-host>/realms/<realm>), or switch AuthMode back to \"token\".");
+        }
+
         if (hasOidcAuthority)
         {
             services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 .AddJwtBearer(options =>
                 {
                     options.Authority = startup.Config.Security.Oidc.Authority;
-                    options.Audience = startup.Config.Security.Oidc.Audience;
                     options.RequireHttpsMetadata = startup.Config.Security.Oidc.RequireHttpsMetadata;
+
+                    var audience = startup.Config.Security.Oidc.Audience;
+                    if (string.IsNullOrWhiteSpace(audience))
+                    {
+                        // OidcConfig.Audience documents "Leave empty to skip validation",
+                        // but assigning a null Audience makes the handler throw
+                        // IDX10208 ("Unable to validate audience ... ValidAudience is null")
+                        // and reject every token. Clear the validator instead.
+                        // Keycloak omits `aud` unless an audience mapper is added, so this
+                        // is the common case for Keycloak deployments.
+                        options.TokenValidationParameters.ValidateAudience = false;
+                    }
+                    else
+                    {
+                        options.Audience = audience;
+                    }
                 });
             services.AddAuthorization();
             services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>

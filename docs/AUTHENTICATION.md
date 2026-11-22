@@ -86,7 +86,7 @@ The system supports five authentication methods, listed in priority order (highe
   3. The middleware bridge (`Program.cs` lines 89–99) copies `?token=` into the `Authorization: Bearer` header
   4. `UseAuthentication()` middleware validates the JWT signature, issuer, audience, and expiration
   5. On success, `ctx.User` is populated and `EndpointHelpers` extracts claims
-- **Role extraction**: Reads the claim named by `RoleClaim` (default: `"roles"`) from the JWT
+- **Role extraction**: Reads every claim named by `RoleClaim` (default: `"roles"`) and selects the highest recognized `viewer` / `operator` / `admin` value; missing or unknown-only claims resolve to `viewer`
 - **Identity mapping**: `sub` → AccountId, `preferred_username` → Username, `name` → DisplayName
 
 ### 2.3 Bootstrap Token
@@ -325,20 +325,36 @@ if (startup.Config.Security.IsOidcMode
 ### 4.3 JWT Bearer Configuration
 
 ```csharp
-// SecurityServicesExtensions.cs lines 15–26
+// SecurityServicesExtensions.cs
 var hasOidcAuthority = !string.IsNullOrWhiteSpace(startup.Config.Security.Oidc.Authority);
-if (startup.Config.Security.IsOidcMode || hasOidcAuthority)
+if (startup.Config.Security.IsOidcMode && !hasOidcAuthority)
+{
+    throw new InvalidOperationException("Security.AuthMode is oidc but Security.Oidc.Authority is empty.");
+}
+
+if (hasOidcAuthority)
 {
     services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         .AddJwtBearer(options =>
         {
             options.Authority = startup.Config.Security.Oidc.Authority;
-            options.Audience = startup.Config.Security.Oidc.Audience;
             options.RequireHttpsMetadata = startup.Config.Security.Oidc.RequireHttpsMetadata;
+
+            if (string.IsNullOrWhiteSpace(startup.Config.Security.Oidc.Audience))
+            {
+                options.TokenValidationParameters.ValidateAudience = false;
+            }
+            else
+            {
+                options.Audience = startup.Config.Security.Oidc.Audience;
+            }
         });
     services.AddAuthorization();
 }
 ```
+
+OIDC mode therefore fails fast when its authority is missing. A blank audience explicitly
+disables audience validation, while a configured audience remains required.
 
 ---
 
