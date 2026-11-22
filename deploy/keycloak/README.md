@@ -22,9 +22,10 @@ OpenClaw__Security__AllowQueryStringToken=true \
 dotnet run --project ../../src/OpenClaw.Gateway
 ```
 
-另开终端运行常规验证，然后停止网关：
+另开终端，从仓库根目录进入 `deploy/keycloak` 后运行常规验证，然后停止网关：
 
 ```bash
+cd deploy/keycloak
 ./scripts/verify.sh http://localhost:18789
 ```
 
@@ -42,9 +43,11 @@ OpenClaw__Security__AllowQueryStringToken=true \
 dotnet run --project ../../src/OpenClaw.Gateway
 ```
 
-网关启动后，在另一个终端按顺序运行多角色验证。脚本退出时会撤销本次新增的角色映射：
+网关启动后，在另一个终端从仓库根目录进入 `deploy/keycloak`，再运行多角色验证。
+脚本退出时会撤销本次新增的角色映射：
 
 ```bash
+cd deploy/keycloak
 ./scripts/verify-multi-role.sh http://localhost:18789   # 多角色不降级（真机）
 ```
 
