@@ -6,6 +6,16 @@ public static class OperatorRoleNames
     public const string Operator = "operator";
     public const string Admin = "admin";
 
+    /// <summary>
+    /// Normalizes a single role string. Unknown or missing values degrade to
+    /// <see cref="Viewer"/> (fail closed).
+    /// </summary>
+    /// <remarks>
+    /// Use this only for single-valued sources (operator account records, stored
+    /// session state). For identity-provider claims, which may legitimately carry
+    /// several roles, use <see cref="FromRoles"/> instead — taking just one claim
+    /// can silently downgrade an admin.
+    /// </remarks>
     public static string Normalize(string? role)
         => role?.Trim().ToLowerInvariant() switch
         {
@@ -14,6 +24,62 @@ public static class OperatorRoleNames
             Admin => Admin,
             _ => Viewer
         };
+
+    /// <summary>
+    /// Resolves a set of role strings to the single highest role granted.
+    /// </summary>
+    /// <remarks>
+    /// Identity providers commonly emit several roles for one user (Keycloak
+    /// realm roles, group memberships, multiple <c>roles</c> claims). Picking the
+    /// first one is order-dependent and can downgrade an admin to viewer, so the
+    /// highest rank wins regardless of order and regardless of how many unknown
+    /// values are mixed in.
+    ///
+    /// Unknown values are ignored rather than treated as <see cref="Viewer"/>:
+    /// <see cref="Viewer"/> is the floor of the result, so an unknown role next to
+    /// <c>admin</c> must not pull the result down. An empty or all-unknown set
+    /// still resolves to <see cref="Viewer"/> — authorization never opens up
+    /// because a claim was missing.
+    /// </remarks>
+    public static string FromRoles(IEnumerable<string?>? roles)
+    {
+        var best = Viewer;
+        var bestRank = Rank(Viewer);
+
+        if (roles is null)
+            return best;
+
+        foreach (var candidate in roles)
+        {
+            if (string.IsNullOrWhiteSpace(candidate))
+                continue;
+
+            var trimmed = candidate.Trim();
+            // Only exact known names count; anything else is ignored so it cannot
+            // outrank a real role (and cannot lower one either).
+            var rank = trimmed.ToLowerInvariant() switch
+            {
+                Admin => Rank(Admin),
+                Operator => Rank(Operator),
+                Viewer => Rank(Viewer),
+                _ => -1
+            };
+
+            if (rank > bestRank)
+            {
+                bestRank = rank;
+                best = trimmed.ToLowerInvariant();
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>
+    /// Convenience overload for callers that already hold a role collection.
+    /// </summary>
+    public static string FromRoles(params string?[] roles)
+        => FromRoles((IEnumerable<string?>)roles);
 
     public static bool CanAccess(string grantedRole, string requiredRole)
         => Rank(Normalize(grantedRole)) >= Rank(Normalize(requiredRole));
@@ -26,6 +92,7 @@ public static class OperatorRoleNames
             _ => 1
         };
 }
+
 
 public static class OrganizationAuthModeNames
 {

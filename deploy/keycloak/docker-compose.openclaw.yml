@@ -1,0 +1,64 @@
+# 可选：把 openclaw 也放进容器。
+#
+#   docker compose -f docker-compose.yml -f docker-compose.openclaw.yml up -d
+#
+# ⚠️ 只在 Linux 宿主上可靠。Docker Desktop（macOS / Windows）的 host 网络是
+#    在虚拟机里，容器的 localhost 并不是你的宿主 localhost，OIDC 的
+#    issuer 一致性会破掉。那两个平台请用默认方式：Keycloak 在 compose 里，
+#    openclaw 直接在宿主机跑 `dotnet run --project src/OpenClaw.Gateway`。
+#
+# 为什么必须 host 网络：openclaw 要拿 Oidc.Authority 去拉 discovery，而
+# Authority 必须等于 token 里的 iss，iss 又必须等于浏览器访问地址。三者
+# 要同时成立，只有让容器与宿主机共享网络栈这条路。
+
+services:
+  openclaw:
+    image: ${OPENCLAW_IMAGE:-openclaw.net:local}
+    # 与本仓根 docker-compose.yml 的 build 段一致，便于本地构建
+    build:
+      context: ../../..
+      dockerfile: Dockerfile
+    container_name: openclaw-gateway
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      keycloak:
+        condition: service_started
+    environment:
+      - MODEL_PROVIDER_KEY=${MODEL_PROVIDER_KEY:?Set MODEL_PROVIDER_KEY in .env}
+      - MODEL_PROVIDER_MODEL=${OPENCLAW_MODEL:-gpt-4o}
+      - MODEL_PROVIDER_ENDPOINT=${MODEL_PROVIDER_ENDPOINT:-}
+
+      # ── 认证：全部交给 Keycloak ──────────────────────────────
+      # AuthMode=oidc 会关掉 loopback 免认证，所有请求都要求有效 JWT
+      - OpenClaw__Security__AuthMode=oidc
+      - OpenClaw__Security__AlwaysRequireAuth=true
+      # host 网络下 localhost 就是宿主机，与 Keycloak 的 --hostname 一致
+      - OpenClaw__Security__Oidc__Authority=${KEYCLOAK_PUBLIC_URL:-http://localhost:8081}/realms/openclaw
+      # 留空：Keycloak 默认不产出 aud（只有 azp），填值会让所有 token 被拒
+      - OpenClaw__Security__Oidc__Audience=
+      - OpenClaw__Security__Oidc__RequireHttpsMetadata=${OPENCLAW_OIDC_REQUIRE_HTTPS:-false}
+      # 必须是单值 claim。realm_roles 是数组，FindFirstValue 只取首个元素，
+      # admin 会被静默降级成 viewer（见 docs/KEYCLOAK.md）
+      - OpenClaw__Security__Oidc__RoleClaim=operator_role
+      # 浏览器 WebSocket 不能带自定义头，需要 ?token= 通道
+      - OpenClaw__Security__AllowQueryStringToken=${OPENCLAW_ALLOW_QUERY_TOKEN:-true}
+
+      - OpenClaw__BindAddress=0.0.0.0
+      - OpenClaw__Port=${OPENCLAW_PORT:-18789}
+      - OpenClaw__Tooling__AllowShell=false
+      - OpenClaw__Tooling__AllowedReadRoots__0=/app/workspace
+      - OpenClaw__Tooling__AllowedWriteRoots__0=/app/workspace
+      - OpenClaw__Plugins__Enabled=false
+    volumes:
+      - openclaw-memory:/app/memory
+      - ${OPENCLAW_WORKSPACE:-./workspace}:/app/workspace
+    healthcheck:
+      test: ["CMD", "/app/OpenClaw.Gateway", "--health-check"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  openclaw-memory:
