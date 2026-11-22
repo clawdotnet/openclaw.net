@@ -28,7 +28,7 @@ cd deploy/keycloak
       "AlwaysRequireAuth": true,
       "Oidc": {
         "Authority": "https://kc.example.com/realms/openclaw",
-        "Audience": "",
+        "Audience": "openclaw",
         "RequireHttpsMetadata": true,
         "RoleClaim": "operator_role"
       }
@@ -43,6 +43,7 @@ cd deploy/keycloak
 OpenClaw__Security__AuthMode=oidc
 OpenClaw__Security__AlwaysRequireAuth=true
 OpenClaw__Security__Oidc__Authority=https://kc.example.com/realms/openclaw
+OpenClaw__Security__Oidc__Audience=openclaw
 OpenClaw__Security__Oidc__RequireHttpsMetadata=true
 OpenClaw__Security__Oidc__RoleClaim=operator_role
 ```
@@ -134,35 +135,50 @@ GET /admin/realms/{realm}/users/{id}   →  "attributes": null  ← 实际没存
 
 token 里自然也没有该 claim，OpenClaw 侧恒为 viewer，**两边日志都没有任何报错**。
 
-两种解法，选一个：
+`operator_role` 会被复制到 access token 并决定授权结果。绝不能让终端用户编辑它，
+否则用户可以自行提升权限。
 
-**A. 声明该属性（严格）**
+两种安全解法，选一个：
+
+**A. 声明该属性并仅允许管理员编辑（首选，严格）**
 
 ```bash
-# 用 realm 的 user profile 配置声明 operator_role
+# 用 realm 的 user profile 配置声明 operator_role，并将 edit 权限设为 ["admin"]，
+# 不要设为 ["user"]。
 curl -X PUT "$KC/admin/realms/$REALM/users/profile" \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   --data-binary @profile-with-operator-role.json
 ```
 
-**B. 允许未声明属性（宽松，推荐）**
+**B. 允许管理员编辑未声明属性**
 
 ```bash
 cd deploy/keycloak && ./scripts/allow-unmanaged-attributes.sh
 ```
 
-脚本把 `unmanagedAttributePolicy` 设为 `ENABLED`，并复核所有用户的
-`operator_role` 是否真的存下来了。幂等，可重复执行。
+脚本把 `unmanagedAttributePolicy` 设为 `ADMIN_EDIT`，并复核所有用户的
+`operator_role` 是否真的存下来了。与 `ENABLED` 不同，`ADMIN_EDIT` 不允许终端用户
+编辑未声明属性。脚本幂等，可重复执行。
 
 注意字段名：Keycloak 的 user profile 配置里是 `validations`（复数），写成
 `validation` 会得到 `Unrecognized field` 的 400。
 
 ---
 
-## 3. Audience：Keycloak 默认不产出 `aud`
+## 3. Audience：配置并校验 `aud`
 
-`OidcConfig.Audience` 的注释是「留空即跳过校验」，所以 Keycloak 场景应当
-**留空**。但历史版本里留空会直接失败：
+Keycloak 默认不会为 client 产出 `aud`，除非配置 audience mapper。本示例 realm 为
+`openclaw`（浏览器客户端）和 `openclaw-verify`（仅供本地验证脚本使用的
+password-grant 客户端）都配置了 mapper，发出 `aud=openclaw`。因此 OpenClaw 应配置：
+
+```text
+OpenClaw__Security__Oidc__Audience=openclaw
+```
+
+`openclaw-verify` 仅用于本地验证，生产环境不要保留或使用这个 password-grant client。
+其他 client 需配置 mapper 发出 `openclaw`，或将 OpenClaw audience 设置为对应值。
+
+留空 `OidcConfig.Audience` 仍可显式跳过校验。历史版本里留空会直接失败：
 
 ```
 SecurityTokenInvalidAudienceException: IDX10208:
@@ -184,8 +200,8 @@ Unable to validate audience. validationParameters.ValidAudience is null or white
 ```bash
 # 1) 取 token（用开了 direct access grants 的 client，或走浏览器登录后从 cookie 拿）
 TOKEN=$(curl -s -X POST "$KC/realms/$REALM/protocol/openid-connect/token" \
-  -d grant_type=password -d client_id=openclaw-verify \
-  -d username=demo -d password=*** -d scope=openid \
+  --data-urlencode grant_type=password --data-urlencode client_id=openclaw-verify \
+  --data-urlencode username=demo --data-urlencode password=*** --data-urlencode scope=openid \
   | python -c 'import json,sys;print(json.load(sys.stdin)["access_token"])')
 
 # 2) 确认 claim 真的在
@@ -202,6 +218,8 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
   -H "Authorization: Bearer $TOKEN" \
   "http://127.0.0.1:18789/tools/approve?approvalId=x&approved=true"
 # 期望：admin → 404（业务错误，权限已过）；operator → 403 requires role 'admin'
+# 如果 RequireRequesterMatchForHttpToolApproval=true 且未提供 requester identity，
+# 端点会在角色探测完成前返回 400。
 ```
 
 实测结果（`operator_role` 从 operator 改成 admin，同一个用户）：
@@ -210,6 +228,9 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 |---|---|---|
 | `admin` | 404 | `No pending approval found for that id.` |
 | `operator` | 403 | `Endpoint 'admin.approvals.override' requires role 'admin'.` |
+
+当 `RequireRequesterMatchForHttpToolApproval=true` 时，这些探测未提供 requester identity，
+端点会在角色专属的审批处理前返回 400。验证脚本会接受该结果，但此模式下无法比较角色。
 
 ### 4.1 多角色不降级的真机验证
 

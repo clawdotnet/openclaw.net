@@ -76,7 +76,7 @@ services:
       - ./realm:/opt/keycloak/data/import:ro
     ports:
       # 浏览器登录跳转必须能直达
-      - "${KEYCLOAK_HTTP_PORT:-8081}:8080"
+      - "127.0.0.1:${KEYCLOAK_HTTP_PORT:-8081}:8080"
       # /health/ready 在管理口 9000，不在 8080。只绑 loopback，仅供本机探活。
       - "127.0.0.1:${KEYCLOAK_MGMT_PORT:-9000}:9000"
     # 不写 healthcheck：Keycloak 26 基于 ubi-micro，镜像内没有 curl/wget/bash，

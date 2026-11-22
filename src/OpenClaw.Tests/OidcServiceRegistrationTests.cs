@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using OpenClaw.Core.Models;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Composition;
@@ -115,5 +117,54 @@ public sealed class OidcServiceRegistrationTests
         using var provider = services.BuildServiceProvider();
         Assert.NotNull(provider.GetService<
             Microsoft.AspNetCore.Authentication.IAuthenticationSchemeProvider>());
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void OidcAudience_WhenBlank_DisablesAudienceValidation(string? audience)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var startup = Startup(
+            new OidcConfig
+            {
+                Authority = "https://keycloak.example.com/realms/openclaw",
+                Audience = audience
+            },
+            SecurityAuthModeNames.Oidc);
+
+        services.AddOpenClawSecurityServices(startup);
+
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
+            .Get(JwtBearerDefaults.AuthenticationScheme);
+
+        Assert.False(options.TokenValidationParameters.ValidateAudience);
+    }
+
+    [Fact]
+    public void OidcAudience_WhenConfigured_PreservesAudienceValidation()
+    {
+        const string audience = "openclaw";
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var startup = Startup(
+            new OidcConfig
+            {
+                Authority = "https://keycloak.example.com/realms/openclaw",
+                Audience = audience
+            },
+            SecurityAuthModeNames.Oidc);
+
+        services.AddOpenClawSecurityServices(startup);
+
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
+            .Get(JwtBearerDefaults.AuthenticationScheme);
+
+        Assert.Equal(audience, options.Audience);
+        Assert.True(options.TokenValidationParameters.ValidateAudience);
     }
 }

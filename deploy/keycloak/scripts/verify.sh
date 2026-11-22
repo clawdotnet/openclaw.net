@@ -49,8 +49,8 @@ AD_PASS="${KC_TEST_ADMIN_PASS:-change-me-admin}"
 
 token_for() {
   curl -fsS --max-time 15 -X POST "${KC_URL}/realms/${REALM}/protocol/openid-connect/token" \
-    -d "grant_type=password" -d "client_id=openclaw-verify" \
-    -d "username=$1" -d "password=$2" -d "scope=openid" \
+    --data-urlencode "grant_type=password" --data-urlencode "client_id=openclaw-verify" \
+    --data-urlencode "username=$1" --data-urlencode "password=$2" --data-urlencode "scope=openid" \
     | python -c 'import json,sys;print(json.load(sys.stdin)["access_token"])' 2>/dev/null
 }
 
@@ -161,6 +161,7 @@ if [ -n "$GATEWAY" ]; then
       "${GATEWAY}/tools/approve?approvalId=probe&approved=true" 2>/dev/null || echo 000)
     case "$CODE" in
       403) ok "operator 被拒（403），角色下限生效" ;;
+      400) ok "requester-match 策略要求 requester identity（400），本次无法比较角色" ;;
       000) bad "连不上 ${GATEWAY}" ;;
       404) bad "operator 竟然通过了 admin 判定（404=权限已过），角色映射有问题" ;;
       405) bad "operator 请求 405：/tools/approve 是 POST 路由，方法用错了" ;;
@@ -175,6 +176,7 @@ if [ -n "$GATEWAY" ]; then
     case "$CODE" in
       # 404 说明已通过 admin 权限判定，只是这个审批 id 不存在 —— 期望结果
       404) ok "admin 通过权限判定（404=无此审批单，符合预期）" ;;
+      400) ok "admin 请求被 requester-match 策略要求提供 requester identity" ;;
       403) bad "admin 被拒（403），operator_role=admin 没生效" ;;
       000) bad "连不上 ${GATEWAY}" ;;
       405) bad "admin 请求 405：方法用错了，应为 POST" ;;

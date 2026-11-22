@@ -4,6 +4,8 @@
 #   ./scripts/up.sh
 set -euo pipefail
 
+START_DIR=$PWD
+trap 'cd "$START_DIR"' EXIT
 cd "$(dirname "$0")/.."
 
 step() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
@@ -39,11 +41,11 @@ cat <<EOF
     OpenClaw__Security__AuthMode=oidc \\
     OpenClaw__Security__AlwaysRequireAuth=true \\
     OpenClaw__Security__Oidc__Authority=${KEYCLOAK_PUBLIC_URL}/realms/${KEYCLOAK_REALM} \\
-    OpenClaw__Security__Oidc__Audience= \\
+    OpenClaw__Security__Oidc__Audience=openclaw \\
     OpenClaw__Security__Oidc__RequireHttpsMetadata=false \\
     OpenClaw__Security__Oidc__RoleClaim=operator_role \\
     OpenClaw__Security__AllowQueryStringToken=true \\
-    dotnet run --project src/OpenClaw.Gateway
+    dotnet run --project ../../src/OpenClaw.Gateway
 
   方式二（仅 Linux）：把 openclaw 也放进容器
 

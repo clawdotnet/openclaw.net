@@ -16,7 +16,20 @@ fi
 
 rand() { python -c "import secrets,sys; print(secrets.token_urlsafe(int(sys.argv[1])))" "$1"; }
 
-cat > "$ENV_FILE" <<EOF
+ADMIN_PASSWORD=$(rand 18)
+DB_PASSWORD=$(rand 24)
+[ -n "$ADMIN_PASSWORD" ] || { echo "生成 KEYCLOAK_ADMIN_PASSWORD 失败" >&2; exit 1; }
+[ -n "$DB_PASSWORD" ] || { echo "生成 KEYCLOAK_DB_PASSWORD 失败" >&2; exit 1; }
+
+umask 077
+TMP_ENV=$(mktemp "${ENV_FILE}.tmp.XXXXXX")
+cleanup() { [ -z "${TMP_ENV:-}" ] || rm -f "$TMP_ENV"; }
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+cat > "$TMP_ENV" <<EOF
 # 由 scripts/init-env.sh 生成。含口令，不要提交到版本库。
 
 # ── Keycloak ───────────────────────────────────────────────────
@@ -29,8 +42,8 @@ KEYCLOAK_MGMT_PORT=9000
 KEYCLOAK_REALM=openclaw
 
 KEYCLOAK_ADMIN=admin
-KEYCLOAK_ADMIN_PASSWORD=$(rand 18)
-KEYCLOAK_DB_PASSWORD=$(rand 24)
+KEYCLOAK_ADMIN_PASSWORD=${ADMIN_PASSWORD}
+KEYCLOAK_DB_PASSWORD=${DB_PASSWORD}
 
 # ── openclaw ───────────────────────────────────────────────────
 OPENCLAW_PORT=18789
@@ -43,7 +56,9 @@ OPENCLAW_OIDC_REQUIRE_HTTPS=false
 OPENCLAW_ALLOW_QUERY_TOKEN=true
 EOF
 
-chmod 600 "$ENV_FILE"
+chmod 600 "$TMP_ENV"
+mv -f "$TMP_ENV" "$ENV_FILE"
+TMP_ENV=""
 echo "已生成 $ENV_FILE（权限 600）"
 echo
 echo "别忘了填 MODEL_PROVIDER_KEY，否则对话会失败。"

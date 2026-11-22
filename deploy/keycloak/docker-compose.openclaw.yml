@@ -16,7 +16,7 @@ services:
     image: ${OPENCLAW_IMAGE:-openclaw.net:local}
     # 与本仓根 docker-compose.yml 的 build 段一致，便于本地构建
     build:
-      context: ../../..
+      context: ../..
       dockerfile: Dockerfile
     container_name: openclaw-gateway
     restart: unless-stopped
@@ -35,8 +35,8 @@ services:
       - OpenClaw__Security__AlwaysRequireAuth=true
       # host 网络下 localhost 就是宿主机，与 Keycloak 的 --hostname 一致
       - OpenClaw__Security__Oidc__Authority=${KEYCLOAK_PUBLIC_URL:-http://localhost:8081}/realms/openclaw
-      # 留空：Keycloak 默认不产出 aud（只有 azp），填值会让所有 token 被拒
-      - OpenClaw__Security__Oidc__Audience=
+      # realm 为 openclaw 客户端配置了 aud=openclaw
+      - OpenClaw__Security__Oidc__Audience=openclaw
       - OpenClaw__Security__Oidc__RequireHttpsMetadata=${OPENCLAW_OIDC_REQUIRE_HTTPS:-false}
       # 必须是单值 claim。realm_roles 是数组，FindFirstValue 只取首个元素，
       # admin 会被静默降级成 viewer（见 docs/KEYCLOAK.md）

@@ -30,7 +30,7 @@ The rest of this document explains **why** the configuration has to look like th
       "AlwaysRequireAuth": true,
       "Oidc": {
         "Authority": "https://kc.example.com/realms/openclaw",
-        "Audience": "",
+        "Audience": "openclaw",
         "RequireHttpsMetadata": true,
         "RoleClaim": "operator_role"
       }
@@ -45,6 +45,7 @@ Or via environment variables (more convenient for containers):
 OpenClaw__Security__AuthMode=oidc
 OpenClaw__Security__AlwaysRequireAuth=true
 OpenClaw__Security__Oidc__Authority=https://kc.example.com/realms/openclaw
+OpenClaw__Security__Oidc__Audience=openclaw
 OpenClaw__Security__Oidc__RequireHttpsMetadata=true
 OpenClaw__Security__Oidc__RoleClaim=operator_role
 ```
@@ -140,35 +141,53 @@ GET /admin/realms/{realm}/users/{id}   ->  "attributes": null  <- actually not s
 The claim never reaches the token, OpenClaw sees viewer forever, and **neither side logs
 anything**.
 
-Two ways out, pick one:
+The `operator_role` attribute is copied into access tokens and determines authorization.
+Never let end users edit it: doing so would let them grant themselves higher privileges.
 
-**A. Declare the attribute (strict)**
+Two safe ways out, pick one:
+
+**A. Declare the attribute as administrator-editable (strict, preferred)**
 
 ```bash
-# Declare operator_role through the realm's user profile configuration
+# Declare operator_role through the realm's user profile configuration.
+# Set its edit permission to ["admin"], not ["user"].
 curl -X PUT "$KC/admin/realms/$REALM/users/profile" \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   --data-binary @profile-with-operator-role.json
 ```
 
-**B. Allow undeclared attributes (lenient, recommended)**
+**B. Allow administrators to edit undeclared attributes**
 
 ```bash
 cd deploy/keycloak && ./scripts/allow-unmanaged-attributes.sh
 ```
 
-The script sets `unmanagedAttributePolicy` to `ENABLED` and then re-reads every user to
-confirm `operator_role` was actually stored. It is idempotent.
+The script sets `unmanagedAttributePolicy` to `ADMIN_EDIT` and then re-reads every user to
+confirm `operator_role` was actually stored. Unlike `ENABLED`, `ADMIN_EDIT` does not allow
+end users to edit undeclared attributes. The script is idempotent.
 
 Watch the field name: it is `validations` (plural) in the user profile configuration.
 Writing `validation` returns a 400 with `Unrecognized field`.
 
 ---
 
-## 3. Audience: Keycloak does not emit `aud` by default
+## 3. Audience: configure and validate `aud`
 
-`OidcConfig.Audience` is documented as "Leave empty to skip validation", so for Keycloak it
-should be **left empty**. In earlier versions leaving it empty failed outright:
+Keycloak does not emit an `aud` claim for a client unless an audience mapper is configured.
+The included realm adds a mapper that emits `aud=openclaw` for both `openclaw` (the browser
+client) and `openclaw-verify` (a local-only password-grant client used by the verification
+scripts). Configure OpenClaw to validate this audience:
+
+```text
+OpenClaw__Security__Oidc__Audience=openclaw
+```
+
+The `openclaw-verify` client exists only to support local verification. Do not retain or use
+this password-grant client in production. For another client, configure an audience mapper
+that emits `openclaw` or use the audience value you configure in OpenClaw.
+
+Leaving `OidcConfig.Audience` empty remains an explicit option to skip validation. In earlier
+versions leaving it empty failed outright:
 
 ```
 SecurityTokenInvalidAudienceException: IDX10208:
@@ -190,8 +209,8 @@ Verify with a real token after configuring. Do not stop at "sign-in succeeded".
 ```bash
 # 1) Get a token (a client with direct access grants enabled, or grab it after browser sign-in)
 TOKEN=$(curl -s -X POST "$KC/realms/$REALM/protocol/openid-connect/token" \
-  -d grant_type=password -d client_id=openclaw-verify \
-  -d username=demo -d password=*** -d scope=openid \
+  --data-urlencode grant_type=password --data-urlencode client_id=openclaw-verify \
+  --data-urlencode username=demo --data-urlencode password=*** --data-urlencode scope=openid \
   | python -c 'import json,sys;print(json.load(sys.stdin)["access_token"])')
 
 # 2) Confirm the claim is actually there
@@ -208,6 +227,8 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
   -H "Authorization: Bearer $TOKEN" \
   "http://127.0.0.1:18789/tools/approve?approvalId=x&approved=true"
 # Expected: admin -> 404 (business error, authorization passed); operator -> 403 requires role 'admin'
+# If RequireRequesterMatchForHttpToolApproval=true and requester identity is omitted,
+# the endpoint returns 400 before the role probe can complete.
 ```
 
 Measured result (`operator_role` switched from operator to admin for the same user):
@@ -216,6 +237,10 @@ Measured result (`operator_role` switched from operator to admin for the same us
 |---|---|---|
 | `admin` | 404 | `No pending approval found for that id.` |
 | `operator` | 403 | `Endpoint 'admin.approvals.override' requires role 'admin'.` |
+
+With `RequireRequesterMatchForHttpToolApproval=true`, these probes omit requester identity
+and return 400 before role-specific approval handling. The verification scripts accept this
+as expected but cannot compare roles in that mode.
 
 ### 4.1 Live verification that multiple roles are not downgraded
 

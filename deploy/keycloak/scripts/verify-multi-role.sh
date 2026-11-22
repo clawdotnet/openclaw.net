@@ -45,10 +45,37 @@ KC_URL="${KC_URL%/}"
 REALM="${KEYCLOAK_REALM:-$(env_get KEYCLOAK_REALM)}"
 REALM="${REALM:-openclaw}"
 ADMIN_PW="${KEYCLOAK_ADMIN_PASSWORD:-$(env_get KEYCLOAK_ADMIN_PASSWORD)}"
+ADMIN="${KEYCLOAK_ADMIN:-$(env_get KEYCLOAK_ADMIN)}"
+ADMIN="${ADMIN:-admin}"
 GATEWAY="${1:-}"
 
 WORK=$(mktemp -d "./.kc-multi-XXXXXX")
-trap 'rm -rf "$WORK"' EXIT
+
+GRANT_CLEANUP=false
+cleanup() {
+  local status=$?
+  trap - EXIT HUP INT TERM
+  if [ "$GRANT_CLEANUP" = true ] && [ -s "$WORK/cleanup.json" ]; then
+    local code
+    code=$(curl -sS --max-time 10 -o "$WORK/cleanup-response.txt" -w '%{http_code}' \
+      -X DELETE -H "Authorization: Bearer $AT" -H "Content-Type: application/json" \
+      --data-binary "@$WORK/cleanup.json" \
+      "${KC_URL}/admin/realms/${REALM}/users/${USER_ID}/role-mappings/realm" || printf '000')
+    if [ "$code" != "204" ]; then
+      echo "清理本次新增 realm role mapping 失败（HTTP ${code}）" >&2
+      [ ! -s "$WORK/cleanup-response.txt" ] || sed 's/^/  /' "$WORK/cleanup-response.txt" >&2
+      [ "$status" -ne 0 ] || status=1
+    else
+      echo "已清理本次新增的 realm role mapping"
+    fi
+  fi
+  rm -rf "$WORK"
+  exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 PASS=0 FAILED=0
 ok()   { printf '  \033[32mOK  \033[0m %s\n' "$1"; PASS=$((PASS+1)); }
@@ -58,8 +85,8 @@ hdr()  { printf '\n\033[1m%s\033[0m\n' "$1"; }
 hdr "0. 准备：拿 admin token"
 
 AT=$(curl -fsS --max-time 15 -X POST "${KC_URL}/realms/master/protocol/openid-connect/token" \
-  -d "grant_type=password" -d "client_id=admin-cli" \
-  -d "username=admin" -d "password=${ADMIN_PW}" \
+  --data-urlencode "grant_type=password" --data-urlencode "client_id=admin-cli" \
+  --data-urlencode "username=${ADMIN}" --data-urlencode "password=${ADMIN_PW}" \
   | python -c 'import json,sys;print(json.load(sys.stdin)["access_token"])') \
   || { echo "取 admin token 失败，检查 .env 里的 KEYCLOAK_ADMIN_PASSWORD" >&2; exit 1; }
 ok "拿到 admin token"
@@ -116,6 +143,24 @@ payload = [{"id": r["id"], "name": r["name"]} for r in roles]
 json.dump(payload, open(os.path.join(w, "grant.json"), "w", encoding="utf-8"))
 PY
 
+curl -fsS --max-time 10 -H "Authorization: Bearer $AT" \
+  "${KC_URL}/admin/realms/${REALM}/users/${USER_ID}/role-mappings/realm" \
+  -o "$WORK/existing-mappings.json"
+
+python - "$WORK" <<'PY'
+import json, os, sys
+w = sys.argv[1]
+targets = json.load(open(os.path.join(w, "grant.json"), encoding="utf-8"))
+existing = json.load(open(os.path.join(w, "existing-mappings.json"), encoding="utf-8"))
+existing_ids = {role["id"] for role in existing}
+cleanup = [role for role in targets if role["id"] not in existing_ids]
+with open(os.path.join(w, "cleanup.json"), "w", encoding="utf-8") as f:
+    if cleanup:
+        json.dump(cleanup, f)
+PY
+
+# Activate cleanup before POST: even a lost/error response may follow a committed grant.
+GRANT_CLEANUP=true
 curl -fsS --max-time 10 -X POST -H "Authorization: Bearer $AT" \
   -H "Content-Type: application/json" --data-binary "@$WORK/grant.json" \
   "${KC_URL}/admin/realms/${REALM}/users/${USER_ID}/role-mappings/realm" >/dev/null \
@@ -124,9 +169,9 @@ curl -fsS --max-time 10 -X POST -H "Authorization: Bearer $AT" \
 hdr "3. 取回真实 token，检查 realm_roles 是否为多值"
 
 TOKEN=$(curl -fsS --max-time 15 -X POST "${KC_URL}/realms/${REALM}/protocol/openid-connect/token" \
-  -d "grant_type=password" -d "client_id=openclaw-verify" \
-  -d "username=${USER_NAME}" -d "password=${MULTI_ROLE_PASS:-change-me-admin}" \
-  -d "scope=openid" \
+  --data-urlencode "grant_type=password" --data-urlencode "client_id=openclaw-verify" \
+  --data-urlencode "username=${USER_NAME}" --data-urlencode "password=${MULTI_ROLE_PASS:-change-me-admin}" \
+  --data-urlencode "scope=openid" \
   | python -c 'import json,sys;print(json.load(sys.stdin)["access_token"])') \
   || { bad "取用户 token 失败（口令被改过？用 MULTI_ROLE_PASS 覆盖）"; exit 1; }
 
@@ -153,11 +198,17 @@ else
     *" admin "*) ok "数组里含 admin" ;;
     *) bad "数组里没有 admin，无法验证降级问题" ;;
   esac
-  # 关键：admin 不能排在第一位，否则老实现也可能碰巧通过
-  case "$ROLES" in
-    admin\ *) echo "  \033[33m注意\033[0m admin 恰好在首位，请确认排序未被固定（多跑几次）" ;;
-    *) ok "admin 不在首位 —— 老实现（FindFirstValue）在此必然降级" ;;
-  esac
+  # Require a recognized lower role before admin so the first-claim regression is deterministic.
+  if python -c '
+import sys
+roles = sys.argv[1].split()
+admin_index = roles.index("admin") if "admin" in roles else -1
+sys.exit(0 if admin_index > 0 and any(role in ("viewer", "operator") for role in roles[:admin_index]) else 1)
+' "$ROLES"; then
+    ok "已知低权限角色排在 admin 之前 —— 老实现（FindFirstValue）会降级"
+  else
+    bad "没有在 admin 之前的已知低权限角色，回归检查结果不确定"
+  fi
 fi
 
 hdr "4. 用同一份 token 判定最高档位（与 EndpointHelpers 同一条逻辑）"
@@ -204,6 +255,7 @@ else
 
   case "$CODE" in
     404) ok "admin 通过权限判定（404=无此审批单，符合预期）" ;;
+    400) ok "admin 请求被 requester-match 策略要求提供 requester identity" ;;
     403)
       bad "admin 被拒（403）—— 多角色聚合没生效"
       sed 's/^/     /' "$WORK/gw.txt" >&2
@@ -225,9 +277,9 @@ if [ -z "$GATEWAY" ]; then
 else
   VUSER="${MULTI_ROLE_VIEWER_USER:-demo-viewer}"
   VTOKEN=$(curl -fsS --max-time 15 -X POST "${KC_URL}/realms/${REALM}/protocol/openid-connect/token" \
-    -d "grant_type=password" -d "client_id=openclaw-verify" \
-    -d "username=${VUSER}" -d "password=${MULTI_ROLE_VIEWER_PASS:-change-me-viewer}" \
-    -d "scope=openid" \
+    --data-urlencode "grant_type=password" --data-urlencode "client_id=openclaw-verify" \
+    --data-urlencode "username=${VUSER}" --data-urlencode "password=${MULTI_ROLE_VIEWER_PASS:-change-me-viewer}" \
+    --data-urlencode "scope=openid" \
     | python -c 'import json,sys;print(json.load(sys.stdin)["access_token"])' 2>/dev/null || true)
 
   if [ -z "$VTOKEN" ]; then
@@ -238,6 +290,7 @@ else
       "${GATEWAY}/tools/approve?approvalId=multi-role-probe&approved=true" 2>/dev/null || echo 000)
     case "$CODE" in
       403) ok "viewer 被拒（403）—— 说明上一步的 404 确实来自 admin 角色" ;;
+      400) ok "requester-match 策略要求 requester identity（400），本次无法比较角色" ;;
       404) bad "viewer 也拿到 404 —— 权限校验被整体跳过，这是越权漏洞" ;;
       401) bad "401 —— 网关验签配置问题" ;;
       000) bad "连不上 ${GATEWAY}" ;;

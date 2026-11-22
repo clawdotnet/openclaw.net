@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 让 Keycloak 接受未在 User Profile 里显式声明的 attribute，并复核 realm 导入结果。
+# 仅允许管理员编辑未在 User Profile 里显式声明的 attribute，并复核 realm 导入结果。
 #
 # ── 为什么必须做这一步 ────────────────────────────────────────────
 # Keycloak 26 默认 unmanagedAttributePolicy=None：通过 Admin API 给用户写一个
@@ -10,7 +10,10 @@
 # openclaw 侧 Normalize(null) 返回 viewer → 所有用户降级成 viewer，
 # 连聊天都进不去。而 Keycloak 与 openclaw 两边日志都不会报错。
 #
-# 所以导入 realm 之后必须补这一步。脚本幂等，可重复执行。
+# ENABLED 会允许终端用户编辑未声明属性，包括进入 access token 的 operator_role，
+# 造成用户自行提升角色。ADMIN_EDIT 保留管理员写入能力，同时禁止终端用户编辑这些属性。
+# 更严格的部署可将 operator_role 声明为仅管理员可编辑的 managed attribute。
+# 导入 realm 后应用 ADMIN_EDIT；脚本幂等，可重复执行。
 #
 # 用法: ./scripts/allow-unmanaged-attributes.sh
 set -euo pipefail
@@ -47,8 +50,8 @@ ADMIN_PW="${KEYCLOAK_ADMIN_PASSWORD:-$(env_get KEYCLOAK_ADMIN_PASSWORD)}"
 
 # admin-cli 在 master realm，不是业务 realm
 TOKEN=$(curl -fsS --max-time 15 -X POST "${KC_URL}/realms/master/protocol/openid-connect/token" \
-  -d "grant_type=password" -d "client_id=admin-cli" \
-  -d "username=${ADMIN}" -d "password=${ADMIN_PW}" \
+  --data-urlencode "grant_type=password" --data-urlencode "client_id=admin-cli" \
+  --data-urlencode "username=${ADMIN}" --data-urlencode "password=${ADMIN_PW}" \
   | python -c 'import json,sys;print(json.load(sys.stdin)["access_token"])') \
   || { echo "取 admin token 失败，检查 KEYCLOAK_ADMIN / KEYCLOAK_ADMIN_PASSWORD" >&2; exit 1; }
 
@@ -65,15 +68,15 @@ import json, os, sys
 path = os.environ["PROFILE_FILE"]
 cfg = json.load(open(path, encoding="utf-8"))
 current = cfg.get("unmanagedAttributePolicy")
-if current == "ENABLED":
-    print("unmanagedAttributePolicy 已是 ENABLED，无需改动")
+if current == "ADMIN_EDIT":
+    print("unmanagedAttributePolicy 已是 ADMIN_EDIT，无需改动")
     sys.exit(0)
 
-cfg["unmanagedAttributePolicy"] = "ENABLED"
+cfg["unmanagedAttributePolicy"] = "ADMIN_EDIT"
 out = os.path.join(os.environ["WORK_DIR"], "profile-new.json")
 with open(out, "w", encoding="utf-8", newline="\n") as f:
     json.dump(cfg, f, ensure_ascii=False)
-print("unmanagedAttributePolicy: %s → ENABLED" % (current or "None"))
+print("unmanagedAttributePolicy: %s → ADMIN_EDIT" % (current or "None"))
 PY
 
 if [ -f "$WORK/profile-new.json" ]; then
@@ -97,7 +100,7 @@ import json, sys
 cfg = json.load(sys.stdin)
 policy = cfg.get("unmanagedAttributePolicy")
 print("复核 unmanagedAttributePolicy =", policy)
-sys.exit(0 if policy == "ENABLED" else 1)
+sys.exit(0 if policy == "ADMIN_EDIT" else 1)
 ' || exit 1
 
 echo
@@ -121,6 +124,6 @@ for u in users:
 if missing:
     print()
     print("  有用户缺 operator_role，openclaw 侧会把他们当 viewer。")
-    print("  给这些用户补上：Users → <user> → Attributes → operator_role = viewer|operator|admin")
+    print("  由 realm 管理员补上：Users → <user> → Attributes → operator_role = viewer|operator|admin")
     sys.exit(1)
 '

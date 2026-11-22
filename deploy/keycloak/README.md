@@ -7,6 +7,9 @@ cd deploy/keycloak
 ./scripts/up.sh                    # 生成 .env → 起 Keycloak → 等就绪 → 修补 realm
 ./scripts/verify.sh                # 验证 issuer / JWKS / claim
 ./scripts/verify.sh http://localhost:18789   # 连上 openclaw 一并验证角色
+# 停掉现有网关后，在终端 1 重新启动：
+OpenClaw__Security__Oidc__RoleClaim=realm_roles dotnet run --project ../../src/OpenClaw.Gateway
+# 在终端 2 执行多角色验证：
 ./scripts/verify-multi-role.sh http://localhost:18789   # 多角色不降级（真机）
 ```
 
@@ -42,13 +45,15 @@ cd deploy/keycloak
 OpenClaw__Security__AuthMode=oidc
 OpenClaw__Security__AlwaysRequireAuth=true
 OpenClaw__Security__Oidc__Authority=http://localhost:8081/realms/openclaw
-OpenClaw__Security__Oidc__Audience=
+OpenClaw__Security__Oidc__Audience=openclaw
 OpenClaw__Security__Oidc__RequireHttpsMetadata=false
 OpenClaw__Security__Oidc__RoleClaim=operator_role
 OpenClaw__Security__AllowQueryStringToken=true
 ```
 
-`aud` 那条必须留空：Keycloak 默认不产出 `aud`（只有 `azp`），填了值会让所有 token 因 audience 不匹配被拒。
+本示例为 `openclaw` 客户端配置了 `aud=openclaw`，所以此处应设为 `openclaw`。
+`openclaw-verify` 是仅供本地脚本使用的 password-grant 客户端，也带该 audience mapper
+以支持本地网关探测；不要在生产中保留或使用它。
 
 ## 为什么 openclaw 不默认放在这个 compose 里
 
@@ -110,7 +115,8 @@ realm_roles = [viewer, admin, openclaw_admin]
 真机复现了这个 bug，并证明修复有效。反向对照（只有 viewer 的用户）始终 403，
 说明 404 确实来自 admin 角色而非权限校验被跳过。
 
-注意：验证会临时创建 `viewer`/`admin` 两个字面角色并授予测试用户。要恢复干净状态：
+注意：验证退出时会撤销本次新增的 `viewer`/`admin` 角色映射，并保留原有授权。
+若脚本自行创建了同名 realm role，角色定义仍会保留。要彻底重置测试 realm：
 
 ```bash
 docker compose down -v && ./scripts/up.sh
@@ -128,8 +134,10 @@ GET .../users/{id}                     →  attributes: null  ← 实际没存
 
 token 里自然没有该 claim，openclaw 侧恒为 viewer，**两边日志都没有任何报错**。
 
-`scripts/allow-unmanaged-attributes.sh` 把它设为 `ENABLED` 并复核种子用户，`up.sh`
-已自动调用。脚本幂等。
+不要设为 `ENABLED`：它允许终端用户编辑未声明属性，而 `operator_role` 会进入 access token，
+用户便可能自行提升角色。首选在 User Profile 中将 `operator_role` 声明为仅管理员可编辑的
+managed attribute；本示例则将策略设为 `ADMIN_EDIT`，仅允许管理员编辑未声明属性。
+`up.sh` 会自动应用并核对该策略。脚本幂等。
 
 ### 3. `/health/ready` 在 9000，不在 8081
 
