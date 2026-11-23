@@ -30,7 +30,7 @@ public sealed class InteractiveStartupRecoveryTests
             using var output = new StringWriter();
 
             var result = InteractiveStartupRecovery.TryRecover(
-                new InvalidOperationException("OPENCLAW_AUTH_TOKEN must be set when binding to a non-loopback address."),
+                new InvalidOperationException("A public bind requires OpenClaw:AuthTokenRef or Security.AuthMode=\"oidc\"."),
                 startup,
                 environmentName: "Production",
                 currentDirectory: root,

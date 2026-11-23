@@ -24,10 +24,12 @@ internal static class SecurityPostureBuilder
         var riskFlags = new List<string>();
         var recommendations = new List<string>();
 
-        if (publicBind && string.IsNullOrWhiteSpace(config.AuthToken))
+        if (publicBind &&
+            string.IsNullOrWhiteSpace(config.AuthToken) &&
+            string.IsNullOrWhiteSpace(config.AuthTokenRef))
         {
             riskFlags.Add("public_bind_missing_auth_token");
-            recommendations.Add("Configure OpenClaw:AuthToken before exposing a non-loopback bind.");
+            recommendations.Add("Configure OpenClaw:AuthTokenRef or OPENCLAW_AUTH_TOKEN before exposing a non-loopback bind.");
         }
 
         if (publicBind && !config.Security.RequireRequesterMatchForHttpToolApproval)
@@ -117,7 +119,8 @@ internal static class SecurityPostureBuilder
         return new SecurityPostureResponse
         {
             PublicBind = publicBind,
-            AuthTokenConfigured = !string.IsNullOrWhiteSpace(config.AuthToken),
+            AuthTokenConfigured = !string.IsNullOrWhiteSpace(config.AuthToken)
+                || !string.IsNullOrWhiteSpace(config.AuthTokenRef),
             BrowserSessionCookieSecureEffective = browserSessionCookieSecureEffective,
             BrowserSessionsEnabled = publicBind,
             BrowserToolConfigured = browserAvailability.ConfiguredEnabled,
@@ -155,7 +158,8 @@ internal static class SecurityPostureBuilder
 
     private static bool HasRawSecretRefs(GatewayConfig config)
     {
-        return SecretResolver.IsRawRef(config.Llm.ApiKey)
+        return SecretResolver.IsRawRef(config.AuthTokenRef)
+            || SecretResolver.IsRawRef(config.Llm.ApiKey)
             || SecretResolver.IsRawRef(config.Sandbox.ApiKey)
             || SecretResolver.IsRawRef(config.Channels.Sms.Twilio.AuthTokenRef)
             || SecretResolver.IsRawRef(config.Channels.Telegram.BotTokenRef)

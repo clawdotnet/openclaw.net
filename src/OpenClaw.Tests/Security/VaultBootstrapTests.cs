@@ -49,6 +49,44 @@ public sealed class VaultBootstrapTests
     }
 
     [Fact]
+    public void ResolveConfiguredAuthToken_UsesConfiguredReferenceAndFailsClosed()
+    {
+        const string reference = "vault:secret/data/openclaw/test/gateway#auth_token";
+        const string resolvedToken = "resolved-gateway-token-marker";
+        var resolver = Substitute.For<ISecretResolver>();
+        resolver.Resolve(reference).Returns(resolvedToken);
+        resolver.Resolve("vault:secret/data/openclaw/test/failure#auth_token").Returns((string?)null);
+        using var services = new ServiceCollection().AddSingleton(resolver).BuildServiceProvider();
+        ResolverAccessor.Use(services);
+
+        try
+        {
+            var config = new GatewayConfig { AuthTokenRef = reference };
+
+            GatewayBootstrapExtensions.ResolveConfiguredAuthToken(config);
+
+            Assert.Equal(resolvedToken, config.AuthToken);
+
+            var fallbackConfig = new GatewayConfig
+            {
+                AuthToken = "legacy-token-marker",
+                AuthTokenRef = "vault:secret/data/openclaw/test/failure#auth_token"
+            };
+            var error = Assert.Throws<InvalidOperationException>(
+                () => GatewayBootstrapExtensions.ResolveConfiguredAuthToken(fallbackConfig));
+
+            Assert.Contains("AuthTokenRef", error.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain("legacy-token-marker", error.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain(resolvedToken, error.Message, StringComparison.Ordinal);
+            Assert.Equal("legacy-token-marker", fallbackConfig.AuthToken);
+        }
+        finally
+        {
+            ResolverAccessor.Reset();
+        }
+    }
+
+    [Fact]
     public async Task Registration_WarmsCacheBeforeCredentialConsumersAreCreated()
     {
         var builder = Host.CreateApplicationBuilder();

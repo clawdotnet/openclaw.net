@@ -1,13 +1,124 @@
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
+using OpenClaw.Core.Security;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Extensions;
 using Xunit;
 
 namespace OpenClaw.Tests;
 
+[Collection(ResolverAccessorCollection.Name)]
 public sealed class GatewayBootstrapExtensionsTests
 {
+    [Fact]
+    public void LoadGatewayConfig_AuthTokenEnvironmentFallback_UsesExplicitReference()
+    {
+        const string environmentValue = "gateway-token-marker";
+        var previous = Environment.GetEnvironmentVariable("OPENCLAW_AUTH_TOKEN");
+        Environment.SetEnvironmentVariable("OPENCLAW_AUTH_TOKEN", environmentValue);
+        try
+        {
+            var config = GatewayBootstrapExtensions.LoadGatewayConfig(
+                new ConfigurationBuilder().AddInMemoryCollection().Build(),
+                loadPersistedSettings: false);
+
+            Assert.Null(config.AuthToken);
+            Assert.Equal("env:OPENCLAW_AUTH_TOKEN", config.AuthTokenRef);
+
+            var explicitConfig = GatewayBootstrapExtensions.LoadGatewayConfig(
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["OpenClaw:AuthToken"] = "explicit-token",
+                        ["OpenClaw:AuthTokenRef"] = "vault:secret/data/test#auth_token"
+                    })
+                    .Build(),
+                loadPersistedSettings: false);
+
+            Assert.Equal("explicit-token", explicitConfig.AuthToken);
+            Assert.Equal("vault:secret/data/test#auth_token", explicitConfig.AuthTokenRef);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENCLAW_AUTH_TOKEN", previous);
+        }
+    }
+
+    [Fact]
+    public void LoadGatewayConfig_ModelProviderEnvironmentFallback_UsesExplicitReference()
+    {
+        const string environmentValue = "model-key-marker";
+        var previous = Environment.GetEnvironmentVariable("MODEL_PROVIDER_KEY");
+        Environment.SetEnvironmentVariable("MODEL_PROVIDER_KEY", environmentValue);
+        try
+        {
+            var config = GatewayBootstrapExtensions.LoadGatewayConfig(
+                new ConfigurationBuilder().AddInMemoryCollection().Build(),
+                loadPersistedSettings: false);
+
+            Assert.Equal("env:MODEL_PROVIDER_KEY", config.Llm.ApiKey);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MODEL_PROVIDER_KEY", previous);
+        }
+    }
+
+    [Fact]
+    public void EnforcePublicBindAuthTokenSource_InlineValue_ThrowsWithoutEchoingValue()
+    {
+        const string token = "inline-token-marker";
+        var directOnly = new OpenClaw.Core.Models.GatewayConfig { AuthToken = token };
+        var directAndReference = new OpenClaw.Core.Models.GatewayConfig
+        {
+            AuthToken = token,
+            AuthTokenRef = "vault:secret/data/test#auth_token"
+        };
+
+        foreach (var config in new[] { directOnly, directAndReference })
+        {
+            var error = Assert.Throws<InvalidOperationException>(
+                () => GatewayBootstrapExtensions.EnforcePublicBindAuthTokenSource(config, isNonLoopbackBind: true));
+
+            Assert.Contains("OpenClaw:AuthToken", error.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain(token, error.Message, StringComparison.Ordinal);
+        }
+
+        GatewayBootstrapExtensions.EnforcePublicBindAuthTokenSource(
+            new OpenClaw.Core.Models.GatewayConfig { AuthTokenRef = "vault:secret/data/test#auth_token" },
+            isNonLoopbackBind: true);
+        GatewayBootstrapExtensions.EnforcePublicBindAuthTokenSource(
+            new OpenClaw.Core.Models.GatewayConfig { Security = new() { AuthMode = "oidc" } },
+            isNonLoopbackBind: true);
+        GatewayBootstrapExtensions.EnforcePublicBindAuthTokenSource(directOnly, isNonLoopbackBind: false);
+    }
+
+    [Fact]
+    public void CreateHealthCheckRequest_ReferenceToken_UsesReadinessProbe()
+    {
+        var config = new OpenClaw.Core.Models.GatewayConfig
+        {
+            AuthTokenRef = "vault:secret/data/test#auth_token"
+        };
+
+        using var request = GatewayBootstrapExtensions.CreateHealthCheckRequest(config, isNonLoopbackBind: true);
+
+        Assert.Equal("/health/ready", request.RequestUri!.AbsolutePath);
+        Assert.Null(request.Headers.Authorization);
+    }
+
+    [Fact]
+    public void CreateHealthCheckRequest_DirectToken_UsesAuthenticatedHealthEndpoint()
+    {
+        var config = new OpenClaw.Core.Models.GatewayConfig { AuthToken = "direct-token" };
+
+        using var request = GatewayBootstrapExtensions.CreateHealthCheckRequest(config, isNonLoopbackBind: true);
+
+        Assert.Equal("/health", request.RequestUri!.AbsolutePath);
+        Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
+        Assert.Equal("direct-token", request.Headers.Authorization.Parameter);
+    }
+
     [Theory]
     [InlineData("AllowViewerAgentExecution", "true")]
     [InlineData("AllowViewerAgentExecution", "false")]

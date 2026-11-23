@@ -29,9 +29,10 @@ internal static class GatewayBootstrapExtensions
 
         var baseSettings = AdminSettingsService.CreateSnapshot(LoadGatewayConfig(builder.Configuration, loadPersistedSettings: false));
         var config = LoadGatewayConfig(builder.Configuration);
+        var isNonLoopbackBind = !GatewaySecurity.IsLoopbackBind(config.BindAddress);
+        EnforcePublicBindAuthTokenSource(config, isNonLoopbackBind);
         var configSources = ConfigurationSourceDiagnosticsBuilder.Build(builder.Configuration, config);
 
-        var isNonLoopbackBind = !GatewaySecurity.IsLoopbackBind(config.BindAddress);
         var isDoctorMode = args.Any(a => string.Equals(a, "--doctor", StringComparison.Ordinal));
         var isHealthCheckMode = args.Any(a => string.Equals(a, "--health-check", StringComparison.Ordinal));
 
@@ -43,25 +44,6 @@ internal static class GatewayBootstrapExtensions
                 ShouldExit = true,
                 ExitCode = exitCode
             };
-        }
-
-        // AuthToken is required for non-loopback unless OIDC mode is selected (OIDC replaces token auth).
-        if (isNonLoopbackBind && string.IsNullOrWhiteSpace(config.AuthToken)
-            && !config.Security.IsOidcMode)
-        {
-            var message = "OPENCLAW_AUTH_TOKEN must be set when binding to a non-loopback address (or set Security.AuthMode=\"oidc\" with Security.Oidc.Authority configured).";
-            WriteConfigSourceDiagnostics(configSources);
-            if (isDoctorMode)
-            {
-                Console.Error.WriteLine(message);
-                return new BootstrapResult
-                {
-                    ShouldExit = true,
-                    ExitCode = 1
-                };
-            }
-
-            throw new InvalidOperationException(message);
         }
 
         var configErrors = ConfigValidator.Validate(config).ToList();
@@ -184,6 +166,33 @@ internal static class GatewayBootstrapExtensions
         return config;
     }
 
+    internal static void EnforcePublicBindAuthTokenSource(GatewayConfig config, bool isNonLoopbackBind)
+    {
+        if (!isNonLoopbackBind)
+            return;
+
+        if (!string.IsNullOrWhiteSpace(config.AuthToken))
+        {
+            throw new InvalidOperationException(
+                "OpenClaw:AuthToken must not contain an inline value on public binds; remove it and use AuthTokenRef or OIDC.");
+        }
+
+        if (string.IsNullOrWhiteSpace(config.AuthTokenRef) && !config.Security.IsOidcMode)
+        {
+            throw new InvalidOperationException(
+                "A public bind requires OpenClaw:AuthTokenRef or Security.AuthMode=\"oidc\".");
+        }
+    }
+
+    internal static void ResolveConfiguredAuthToken(GatewayConfig config)
+    {
+        if (string.IsNullOrWhiteSpace(config.AuthTokenRef))
+            return;
+
+        config.AuthToken = SecretResolver.Resolve(config.AuthTokenRef)
+            ?? throw new InvalidOperationException("OpenClaw:AuthTokenRef is configured but could not be resolved.");
+    }
+
     internal static IReadOnlyList<string> ValidateOptionalFeatureCompatibility(GatewayConfig config)
     {
         var errors = new List<string>();
@@ -236,10 +245,20 @@ internal static class GatewayBootstrapExtensions
 
     private static void ApplyEnvironmentOverrides(GatewayConfig config)
     {
-        config.Llm.ApiKey = ResolveSecretRefOrNull(config.Llm.ApiKey) ?? Environment.GetEnvironmentVariable("MODEL_PROVIDER_KEY");
+        if (string.IsNullOrWhiteSpace(config.Llm.ApiKey)
+            && !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MODEL_PROVIDER_KEY")))
+        {
+            config.Llm.ApiKey = "env:MODEL_PROVIDER_KEY";
+        }
+
         config.Llm.Model = Environment.GetEnvironmentVariable("MODEL_PROVIDER_MODEL") ?? config.Llm.Model;
         config.Llm.Endpoint = ResolveSecretRefOrNull(config.Llm.Endpoint) ?? Environment.GetEnvironmentVariable("MODEL_PROVIDER_ENDPOINT");
-        config.AuthToken ??= Environment.GetEnvironmentVariable("OPENCLAW_AUTH_TOKEN");
+        if (string.IsNullOrWhiteSpace(config.AuthToken)
+            && string.IsNullOrWhiteSpace(config.AuthTokenRef)
+            && !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OPENCLAW_AUTH_TOKEN")))
+        {
+            config.AuthTokenRef = "env:OPENCLAW_AUTH_TOKEN";
+        }
     }
 
     private static void ApplyExecutionCompatibility(GatewayConfig config)
@@ -446,11 +465,8 @@ internal static class GatewayBootstrapExtensions
 
     private static async Task<int> RunHealthCheckAsync(GatewayConfig config, bool isNonLoopbackBind)
     {
-        var url = $"http://127.0.0.1:{config.Port}/health";
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-        using var req = new HttpRequestMessage(HttpMethod.Get, url);
-        if (isNonLoopbackBind && !string.IsNullOrWhiteSpace(config.AuthToken))
-            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AuthToken);
+        using var req = CreateHealthCheckRequest(config, isNonLoopbackBind);
 
         try
         {
@@ -461,5 +477,16 @@ internal static class GatewayBootstrapExtensions
         {
             return 1;
         }
+    }
+
+    internal static HttpRequestMessage CreateHealthCheckRequest(GatewayConfig config, bool isNonLoopbackBind)
+    {
+        var useReadinessProbe = isNonLoopbackBind && !string.IsNullOrWhiteSpace(config.AuthTokenRef);
+        var path = useReadinessProbe ? "/health/ready" : "/health";
+        var request = new HttpRequestMessage(HttpMethod.Get, $"http://127.0.0.1:{config.Port}{path}");
+        if (isNonLoopbackBind && !useReadinessProbe && !string.IsNullOrWhiteSpace(config.AuthToken))
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AuthToken);
+
+        return request;
     }
 }

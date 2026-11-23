@@ -297,6 +297,7 @@ internal static class InteractiveStartupRecovery
     {
         var message = ex.Message;
         return Contains(message, "OPENCLAW_AUTH_TOKEN must be set when binding to a non-loopback address.") ||
+               Contains(message, "A public bind requires OpenClaw:AuthTokenRef or Security.AuthMode") ||
                Contains(message, "MODEL_PROVIDER_KEY must be set") ||
                Contains(message, "MODEL_PROVIDER_ENDPOINT must be set") ||
                Contains(message, "Endpoint must be set for provider") ||

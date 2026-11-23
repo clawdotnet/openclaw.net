@@ -11,6 +11,7 @@ public sealed class GatewayConfig
     public string BindAddress { get; set; } = "127.0.0.1";
     public int Port { get; set; } = 18789;
     public string? AuthToken { get; set; }
+    public string? AuthTokenRef { get; set; }
     public RuntimeConfig Runtime { get; set; } = new();
     public LlmProviderConfig Llm { get; set; } = new();
     public ModelsConfig Models { get; set; } = new();

@@ -93,6 +93,7 @@ while (true)
         if (app.Services.GetService<VaultRefPrewarmService>() is { } vaultPrewarm)
             await vaultPrewarm.WarmAsync(app.Lifetime.ApplicationStopping);
 #endif
+        GatewayBootstrapExtensions.ResolveConfiguredAuthToken(startup.Config);
         app.Lifetime.ApplicationStarted.Register(() => started = true);
         startupConsole.WritePhase("Initializing runtime");
         app.UseTickerQ();

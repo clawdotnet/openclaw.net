@@ -24,6 +24,20 @@ public sealed class StartupFailureReporterTests
     }
 
     [Fact]
+    public void Render_MissingAuthTokenReference_ShowsReferenceGuidance()
+    {
+        var text = StartupFailureReporter.Render(
+            new InvalidOperationException("A public bind requires OpenClaw:AuthTokenRef or Security.AuthMode=\"oidc\"."),
+            startup: null,
+            environmentName: "Production",
+            isDoctorMode: false);
+
+        Assert.Contains("Startup failed: authentication is required for a non-loopback bind.", text, StringComparison.Ordinal);
+        Assert.Contains("OpenClaw:AuthTokenRef", text, StringComparison.Ordinal);
+        Assert.Contains("OPENCLAW_AUTH_TOKEN", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Render_ReadOnlyStorage_ShowsWritablePathGuidance()
     {
         var startup = CreateStartupContext(config =>

@@ -58,7 +58,8 @@ internal static class StartupFailureReporter
     {
         var message = ex.Message;
 
-        if (Contains(message, "OPENCLAW_AUTH_TOKEN must be set when binding to a non-loopback address."))
+        if (Contains(message, "OPENCLAW_AUTH_TOKEN must be set when binding to a non-loopback address.") ||
+            Contains(message, "A public bind requires OpenClaw:AuthTokenRef or Security.AuthMode"))
             return BuildAuthTokenReport(startup, environmentName, isDoctorMode, suggestQuickstart);
 
         if (IsPortInUse(ex))
@@ -88,7 +89,7 @@ internal static class StartupFailureReporter
         var details = new List<string>();
         AddIfValue(details, "Current ASPNETCORE_ENVIRONMENT", environmentName);
         AddIfValue(details, "BindAddress", startup?.Config.BindAddress);
-        details.Add("Non-loopback binds require OPENCLAW_AUTH_TOKEN so remote requests are authenticated.");
+        details.Add("Non-loopback binds require AuthTokenRef or OPENCLAW_AUTH_TOKEN so remote requests are authenticated.");
 
         if (string.Equals(environmentName, Environments.Production, StringComparison.OrdinalIgnoreCase))
         {
@@ -99,7 +100,7 @@ internal static class StartupFailureReporter
         {
             "For local-only use, set OpenClaw__BindAddress to 127.0.0.1.",
             "If you are starting the gateway on your machine, set ASPNETCORE_ENVIRONMENT to Development so the repo-local defaults are used.",
-            "If you do want a non-loopback bind, set OPENCLAW_AUTH_TOKEN to a strong random value before launch."
+            "If you do want a non-loopback bind, set OPENCLAW_AUTH_TOKEN or configure OpenClaw:AuthTokenRef before launch."
         };
         AddOperatorNextSteps(actions, isDoctorMode, suggestQuickstart);
 
