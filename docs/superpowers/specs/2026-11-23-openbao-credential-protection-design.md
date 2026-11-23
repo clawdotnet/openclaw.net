@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved for specification review. This design covers JIT Gateway deployments; the OpenBao backend remains unavailable in NativeAOT publishes.
+Revised for specification review. This design covers JIT Gateway deployments; the OpenBao backend remains unavailable in NativeAOT publishes.
 
 ## Context
 
@@ -100,11 +100,19 @@ This is an intentional public-bind compatibility change and must be called out i
 - Logs, traces, audit events, startup diagnostics, exception text, and support bundles must not contain resolved values. Where configuration paths are reported, report field names or reference types only.
 - OpenBao access tokens and policies are operational bootstrap concerns; the application must not store its own OpenBao token in the same KV backend.
 
+## Legacy admin-settings snapshots
+
+`AdminSettingsSnapshot` currently carries some WhatsApp credential values, and an admin update can serialize that snapshot to `admin-settings.json`. New writes must omit inline credential values and preserve their `*Ref` settings. Keep the existing in-memory values for the running process, but do not copy them into the persisted snapshot; after restart, a credential that was only present as a legacy persisted literal will no longer be available.
+
+For local/non-public deployments, continue loading existing legacy snapshot values during migration and emit a warning containing field names only. Do not silently claim those values are OpenBao-protected. Operators must move them to `env:`/`vault:` references before relying on them across a restart. Public-bind validation rejects inline credentials even when loaded from an old snapshot.
+
+Admin settings responses, support bundles, and other exports must use a sanitized projection rather than serializing the credential-bearing runtime snapshot. Preserve the existing config API's configured/not-configured behavior while ensuring update responses cannot return secret values.
+
 ## Migration and rollout
 
 1. **Inventory:** Produce and maintain the field-level credential coverage matrix in `docs/security/vault.md`. Identify fields that already use `SecretResolver` and fields still consumed as literal values, including secret-bearing Stripe Link process environment entries.
 2. **Close gaps:** Add `AuthTokenRef`, then route only confirmed credential fields through the resolver, including classified Stripe Link credentials. Preserve direct-value behavior for local deployments.
-3. **Protect persistence and APIs:** Ensure administrative settings round-trip references rather than resolved values. Return configured/not-configured state instead of secret content.
+3. **Protect persistence and APIs:** Preserve in-memory legacy values while excluding credential literals from new admin-settings writes. Sanitize settings responses, support bundles, and exports; warn when loading legacy local values.
 4. **Pilot:** Configure HTTPS OpenBao, an externally supplied least-privilege token, KV paths, and required pre-warm in a non-public JIT environment. Validate every referenced secret before production rollout.
 5. **Migrate and rotate:** Replace production inline credentials with `vault:` references, verify startup and dependent integrations, then rotate/revoke the old credentials. Account for cache TTL and clients that capture values at construction.
 6. **Enforce public-bind policy:** Enable the credential validator and publish the breaking-change notice and field-specific remediation guidance.
@@ -117,6 +125,8 @@ This is an intentional public-bind compatibility change and must be called out i
 - Required pre-warm blocks serving when any configured required reference cannot be fetched.
 - Public-bind validation rejects direct credential literals, accepts `env:` and `vault:` references, and reports only the field path. The explicit `raw:` override retains its documented warning behavior.
 - Administrative settings round-trip references and do not return resolved values.
+- Legacy local `admin-settings.json` credentials load with a field-only warning, remain available in the current process, and are not copied into a new snapshot; public-bind startup rejects those literals.
+- Admin settings updates, support bundles, and exports do not include inline credential values.
 - Tests cover secret redaction across API responses, diagnostics, logs, and exceptions.
 - JIT Vault integration tests verify KV v2 resolution and rotation/cache behavior; NativeAOT publish checks confirm the backend is excluded and documentation states the limitation.
 - Documentation lists credential families, reference examples, migration steps, public-bind behavior, bootstrap-token handling, and rotation/restart expectations.
@@ -127,3 +137,4 @@ This is an intentional public-bind compatibility change and must be called out i
 - NativeAOT: OpenBao is JIT-only for this design.
 - Connected-account OAuth: permit references to externally managed secrets; do not design token issuance/refresh/ownership.
 - Public bind: reject inline credential values; retain the existing explicit `raw:` compatibility override.
+- Legacy admin snapshots: preserve local loading with a field-only warning; omit inline values on new writes and require `env:`/`vault:` migration for persistence.
