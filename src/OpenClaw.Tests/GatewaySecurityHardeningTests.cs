@@ -33,6 +33,36 @@ public sealed class GatewaySecurityHardeningTests
     }
 
     [Fact]
+    public void EnforcePublicBindHardening_ResolvedAuthToken_IsNotReclassifiedAsInlineCredential()
+    {
+        var config = CreatePublicBindSafeBaseConfig();
+        config.AuthToken = "resolved-runtime-token";
+
+        GatewaySecurityExtensions.EnforcePublicBindHardening(config, isNonLoopbackBind: true);
+    }
+
+    [Fact]
+    public void EnforcePublicBindHardening_WorkflowTokenEndpoint_IsNotClassifiedAsCredential()
+    {
+        var config = CreatePublicBindSafeBaseConfig();
+        config.Workflows.Enabled = true;
+        config.Workflows.Backends["delegated"] = new WorkflowBackendConfig
+        {
+            BaseUrl = "https://workflow.example.test",
+            Authentication = new WorkflowAuthenticationConfig
+            {
+                Mode = "token-exchange",
+                TokenEndpoint = "https://identity.example.test/token",
+                ClientId = "client",
+                ClientSecretRef = "env:WORKFLOW_CLIENT_SECRET",
+                Scopes = ["workflow.read"]
+            }
+        };
+
+        GatewaySecurityExtensions.EnforcePublicBindHardening(config, isNonLoopbackBind: true);
+    }
+
+    [Fact]
     public void EnforcePublicBindHardening_NonSecretIdentifier_IsAllowed()
     {
         var config = CreatePublicBindSafeBaseConfig();

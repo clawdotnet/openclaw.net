@@ -358,7 +358,10 @@ public static class GatewaySecurityExtensions
     }
 
     internal static bool HasProxyUriUserInfo(string? value)
-        => Uri.TryCreate(value, UriKind.Absolute, out var uri) && !string.IsNullOrEmpty(uri.UserInfo);
+    {
+        var proxyUrl = SecretResolver.IsRawRef(value) ? value![4..] : value;
+        return Uri.TryCreate(proxyUrl, UriKind.Absolute, out var uri) && !string.IsNullOrEmpty(uri.UserInfo);
+    }
 
     private static bool IsWhatsAppProxyPath(string path)
         => path.EndsWith(":Channels:WhatsApp:FirstPartyWorker:Proxy", StringComparison.OrdinalIgnoreCase)
@@ -373,13 +376,15 @@ public static class GatewaySecurityExtensions
 
     private static bool LooksLikeCredentialPath(string path)
     {
-        if (path.EndsWith(":Pulse:AckToken", StringComparison.OrdinalIgnoreCase))
+        if (path.Equals("OpenClaw:AuthToken", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith(":Pulse:AckToken", StringComparison.OrdinalIgnoreCase))
             return false;
 
         var separator = path.LastIndexOf(':');
         var propertyName = separator >= 0 ? path[(separator + 1)..] : path;
         if (propertyName.Equals("CredentialsPath", StringComparison.OrdinalIgnoreCase) ||
-            propertyName.Equals("CredentialsPathRef", StringComparison.OrdinalIgnoreCase))
+            propertyName.Equals("CredentialsPathRef", StringComparison.OrdinalIgnoreCase) ||
+            propertyName.Equals("TokenEndpoint", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
