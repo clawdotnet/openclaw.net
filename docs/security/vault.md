@@ -7,6 +7,28 @@ OpenClaw.NET resolves secrets through `SecretResolver` (static facade) backed by
 - resolved values never appear in exception messages, logs, traces, or stack traces
 - the token is referenced through the existing `env:`/`raw:` indirection, never written as plaintext config
 
+## Credential Coverage and Priority
+
+All configuration paths below are relative to the `OpenClaw` configuration root. `vault:` support is determined by the consumer, not by the presence of a configuration field or a `*Ref` property. The following inventory reflects current resolver call sites; entries marked as rollout gaps are not protected by OpenBao until the indicated consumer change is implemented.
+
+| Priority | Configuration fields | Current coverage and guidance |
+|---|---|---|
+| P0 | `OpenClaw:AuthToken` / planned `OpenClaw:AuthTokenRef` | The direct gateway token is currently a literal-only gap. The rollout adds `AuthTokenRef`; keep direct values for local migration only and use `env:`/`vault:` on public binds. |
+| P1 | `OpenClaw:Llm:ApiKey`, `OpenClaw:Models:Profiles[*]:ApiKey`, `OpenClaw:Multimodal:ElevenLabs:ApiKey`, provider keys consumed by image/search tools, and `OpenClaw:DynamicTurnRouting:Jev:ApiKeyRef` | Existing consumers resolve these values. Use references for production; confirm the selected provider/tool consumes the relevant field. |
+| P1 | `OpenClaw:Channels:Telegram:BotTokenRef`, `WebhookSecretTokenRef`; `Slack:BotTokenRef`, `SigningSecretRef`; `Discord:BotTokenRef`, `PublicKeyRef`; `WhatsApp:WebhookVerifyTokenRef`, `WebhookAppSecretRef`, `CloudApiTokenRef`, `BridgeTokenRef`; `Teams:AppPasswordRef`; `Sms:Twilio:AuthTokenRef`; `Feishu:AppSecretRef`; `DingTalk:AppKeyRef`, `AppSecretRef`; `WeCom:BotSecretRef`, `CorpSecretRef` | These credential references are consumed by resolver-backed channel/webhook paths. The corresponding direct-value fields remain legacy configuration and are not OpenBao-protected unless a reference is configured. Channel IDs, app IDs, tenant IDs, robot codes, account IDs, and phone numbers are identifiers rather than credentials by default. |
+| P1 | `OpenClaw:Plugins:Database:ConnectionString`, `Plugins:HomeAssistant:TokenRef`, `Plugins:Notion:ApiKeyRef`, `Plugins:Email:PasswordRef`, `Plugins:Mqtt:UsernameRef` / `PasswordRef`, and Nacos adapter username/password | Existing tool and adapter consumers call `SecretResolver`; use `env:`/`vault:` references where supported. |
+| P1 | `OpenClaw:Workflows:Backends[*]:ApiTokenSecret`, `Authentication:ClientSecretRef`; MCP delegated `ClientSecretRef` / `SigningKeyRef`; `OpenClaw:Webhooks:Endpoints[*]:Secret`; `GmailPubSub:WebhookSecretRef` | These consuming paths resolve references. OAuth client IDs, audiences, endpoints, scopes, and webhook metadata are not secrets. |
+| P1 | `OpenClaw:Payments:StripeLink:EnvironmentVariables[*]` | Current gap: Stripe Link passes this map to its CLI without resolving secret references. The rollout will classify secret-bearing variable names and resolve their references before process launch; non-secret identifiers remain unchanged. |
+| P1 | `OpenClaw:Channels:WhatsApp:FirstPartyWorker:Proxy` and `Accounts[*]:Proxy` | Current gap: worker proxy URLs are sent to the worker without secret resolution. The rollout will resolve full-URL `env:`/`vault:` references at the worker boundary and treat URI userinfo as an inline credential. |
+| P2 | `OpenClaw:CodingBackends:*:SecretRef` and connected-account `SecretRef` values | Existing credential consumers resolve these references. Token-file and protected-blob modes remain supported; OAuth issuance and refresh are outside this design. |
+| Gap | `OpenClaw:GmailPubSub:CredentialsPath` / `CredentialsPathRef` | A path is declared, but no Gmail service-account credential loader consumes it. Do not claim that the file contents are protected by OpenBao. |
+| Gap | WhatsApp values in legacy `admin-settings.json` snapshots and settings/export projections | Snapshots can contain inline webhook, Cloud API, bridge, and proxy credentials. The rollout will retain local legacy loading with a field-only warning, then omit inline values from new snapshots and sanitized responses/exports. |
+| Out of scope | Conversations, memory, attachments, personal data, WhatsApp protocol session files, one-time payment secrets, TLS termination private keys, and application/business data | Do not put these in ordinary OpenBao KV as part of this credential rollout. Apply separate data-protection and key-management policies where needed. |
+
+Use the KV v2 naming convention `secret/data/openclaw/<environment>/<service>#<key>`, for example `vault:secret/data/openclaw/prod/gateway#auth_token` or `vault:secret/data/openclaw/prod/channels/slack#bot_token`. Keep stable lowercase names and never put secret values or personal data in paths or key names. Configure a least-privilege OpenBao token through an external bootstrap source such as `env:VAULT_TOKEN`; do not store the Vault token in the same KV backend.
+
+On public binds, the rollout rejects inline credentials and accepts `env:`/`vault:` references; the existing `raw:` compatibility opt-in remains disabled by default. Local deployments retain legacy literal behavior during migration. The OpenBao backend is JIT-only; NativeAOT publishes exclude it.
+
 ## Reference Grammar
 
 ```
