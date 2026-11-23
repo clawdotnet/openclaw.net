@@ -8,11 +8,16 @@ public sealed class StripeLinkPaymentProvider : IPaymentProvider, IPaymentProvid
 {
     private readonly StripeLinkOptions _options;
     private readonly ILinkCliCommandRunner _runner;
+    private readonly Func<string?, string?>? _secretResolver;
 
-    public StripeLinkPaymentProvider(StripeLinkOptions options, ILinkCliCommandRunner? runner = null)
+    public StripeLinkPaymentProvider(
+        StripeLinkOptions options,
+        ILinkCliCommandRunner? runner = null,
+        Func<string?, string?>? secretResolver = null)
     {
         _options = options;
         _runner = runner ?? new LinkCliProcessRunner();
+        _secretResolver = secretResolver;
     }
 
     public string ProviderId => _options.ProviderId;
@@ -26,7 +31,7 @@ public sealed class StripeLinkPaymentProvider : IPaymentProvider, IPaymentProvid
             _options.CliPath,
             ["--version"],
             _options.WorkingDirectory,
-            _options.EnvironmentVariables,
+            ResolveEnvironment(),
             _options.Timeout,
             ct);
 
@@ -151,7 +156,29 @@ public sealed class StripeLinkPaymentProvider : IPaymentProvider, IPaymentProvid
     }
 
     private ValueTask<LinkCliCommandResult> RunJsonAsync(IReadOnlyList<string> arguments, CancellationToken ct)
-        => _runner.RunAsync(_options.CliPath, arguments, _options.WorkingDirectory, _options.EnvironmentVariables, _options.Timeout, ct);
+        => _runner.RunAsync(_options.CliPath, arguments, _options.WorkingDirectory, ResolveEnvironment(), _options.Timeout, ct);
+
+    private IReadOnlyDictionary<string, string> ResolveEnvironment()
+    {
+        var resolved = new Dictionary<string, string>(_options.EnvironmentVariables, StringComparer.Ordinal);
+        foreach (var (name, value) in resolved.ToArray())
+        {
+            if (!StripeLinkSecretEnvironmentName.IsSensitive(name) ||
+                !(value.StartsWith("env:", StringComparison.OrdinalIgnoreCase) ||
+                  value.StartsWith("vault:", StringComparison.OrdinalIgnoreCase) ||
+                  value.StartsWith("raw:", StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            var secret = _secretResolver?.Invoke(value);
+            if (secret is null)
+                throw new InvalidOperationException($"Stripe Link environment entry '{name}' could not be resolved.");
+            resolved[name] = secret;
+        }
+
+        return resolved;
+    }
 
     private static string? FirstLine(string value)
         => value.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();

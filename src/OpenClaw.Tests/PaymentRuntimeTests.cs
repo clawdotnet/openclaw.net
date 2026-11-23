@@ -328,6 +328,72 @@ public sealed class PaymentRuntimeTests
     }
 
     [Fact]
+    public async Task StripeLinkSetupStatus_ResolvesEnvironmentSecretReferences()
+    {
+        var options = new StripeLinkOptions
+        {
+            EnvironmentVariables = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["STRIPE_API_KEY"] = "env:STRIPE_API_KEY",
+                ["STRIPE_MODE"] = "env:STRIPE_MODE",
+                ["STRIPE_ACCOUNT_ID"] = "vault:secret/data/account#id"
+            }
+        };
+        var runner = new StaticLinkRunner(new LinkCliCommandResult { ExitCode = 0, Stdout = "link-cli 1.0" });
+        var provider = new StripeLinkPaymentProvider(
+            options,
+            runner,
+            reference => reference == "env:STRIPE_API_KEY" ? "resolved-api-key" : null);
+
+        _ = await provider.GetSetupStatusAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal("resolved-api-key", runner.Environments.Single()["STRIPE_API_KEY"]);
+        Assert.Equal("env:STRIPE_MODE", runner.Environments.Single()["STRIPE_MODE"]);
+        Assert.Equal("vault:secret/data/account#id", runner.Environments.Single()["STRIPE_ACCOUNT_ID"]);
+        Assert.Equal("env:STRIPE_API_KEY", options.EnvironmentVariables["STRIPE_API_KEY"]);
+    }
+
+    [Fact]
+    public async Task StripeLinkSetupStatus_MissingEnvironmentReference_ThrowsWithoutEchoingValue()
+    {
+        var options = new StripeLinkOptions
+        {
+            EnvironmentVariables = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["STRIPE_API_KEY"] = "env:private-key-name"
+            }
+        };
+        var provider = new StripeLinkPaymentProvider(
+            options,
+            new StaticLinkRunner(new LinkCliCommandResult { ExitCode = 0 }),
+            _ => null);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await provider.GetSetupStatusAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains("STRIPE_API_KEY", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("private-key-name", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task StripeLinkSetupStatus_SecretReferenceWithoutResolver_ThrowsExplicitly()
+    {
+        var options = new StripeLinkOptions
+        {
+            EnvironmentVariables = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["STRIPE_API_KEY"] = "vault:secret/data/stripe#api_key"
+            }
+        };
+        var provider = new StripeLinkPaymentProvider(options, new StaticLinkRunner(new LinkCliCommandResult { ExitCode = 0 }));
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await provider.GetSetupStatusAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains("STRIPE_API_KEY", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task LinkCliProcessRunner_UsesArgumentListWithoutShellExpansion()
     {
         var runner = new LinkCliProcessRunner();
@@ -511,6 +577,7 @@ public sealed class PaymentRuntimeTests
     {
         private readonly LinkCliCommandResult _result;
         public List<string[]> Commands { get; } = [];
+        public List<IReadOnlyDictionary<string, string>> Environments { get; } = [];
 
         public StaticLinkRunner(LinkCliCommandResult result)
         {
@@ -520,6 +587,7 @@ public sealed class PaymentRuntimeTests
         public ValueTask<LinkCliCommandResult> RunAsync(string executable, IReadOnlyList<string> arguments, string? workingDirectory, IReadOnlyDictionary<string, string> environment, TimeSpan timeout, CancellationToken ct)
         {
             Commands.Add(arguments.ToArray());
+            Environments.Add(new Dictionary<string, string>(environment, StringComparer.Ordinal));
             return ValueTask.FromResult(_result);
         }
     }

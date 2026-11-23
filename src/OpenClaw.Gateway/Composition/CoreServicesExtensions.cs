@@ -81,7 +81,7 @@ internal static class CoreServicesExtensions
                 Timeout = TimeSpan.FromSeconds(Math.Max(1, config.Payments.StripeLink.TimeoutSeconds)),
                 WorkingDirectory = config.Payments.StripeLink.WorkingDirectory,
                 EnvironmentVariables = config.Payments.StripeLink.EnvironmentVariables
-            }, sp.GetRequiredService<ILinkCliCommandRunner>()));
+            }, sp.GetRequiredService<ILinkCliCommandRunner>(), secretResolver: SecretResolver.Resolve));
         }
         services.AddSingleton<IPaymentApprovalService, GatewayPaymentApprovalService>();
         services.AddSingleton<IRedactionPipeline>(sp => new RedactionPipeline(sp.GetServices<ISensitiveDataRedactor>()));
