@@ -86,6 +86,20 @@ go build -o whatsapp-whatsmeow-worker .
 | `HistorySync` | `true` | 每个账户的历史同步覆盖 |
 | `Proxy` | 继承 | 每个账户的代理覆盖 |
 
+### 代理凭据
+
+不要直接在 URI 中写入代理用户名/密码。将完整代理 URL 存入 OpenBao 或环境变量，并在 `Proxy` 中设置其引用：
+
+```json
+{
+  "Proxy": "vault:secret/data/openclaw/prod/channels/whatsapp#proxy_url"
+}
+```
+
+`FirstPartyWorker.Proxy` 和账户级 `Accounts[].Proxy` 均使用相同格式；引用解析出的值必须是完整代理 URL。密钥预热后，引用会在 worker 边界解析。公网绑定会拒绝代理 URI userinfo 以及其他内嵌凭据；`raw:` 引用需要显式启用公网兼容选项。
+
+本地旧版 `admin-settings.json` 中的 WhatsApp 内嵌凭据仍可加载，但警告仅包含字段路径。新持久化快照、设置/setup 响应、agent bundle 导出和审计记录均不包含 WhatsApp 内嵌凭据。在 WhatsApp setup 更新 API 中，`null` 代理值会保留该账户当前值，空字符串则会清除它。
+
 ## 认证流程
 
 ### QR 码（默认）

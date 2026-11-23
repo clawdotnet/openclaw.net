@@ -36,6 +36,7 @@ All notable changes to this project are tracked in this file.
 
 ### Security
 
+- Expanded OpenBao credential protection to the gateway auth token, Stripe Link CLI secret environment values, and WhatsApp worker proxy URLs. Public binds reject inline credentials, including authenticated WhatsApp proxy URLs; `env:` and `vault:` references remain supported. Legacy local admin snapshots remain loadable with field-only warnings but are not copied into new snapshots.
 - Required the `operator` role wherever a request runs the agent or mutates state, matching `POST /api/integration/messages`. Previously any authenticated identity, including viewer account tokens, viewer browser sessions, and OIDC users without an operator role claim, could run the agent with tools through these surfaces. New operator accounts default to `viewer`, so grant `operator` to accounts used for Companion, CLI/TUI chat, and API clients.
   - `/ws`: closed with code 1008, which web chat reports as an authorization failure.
   - `/ws/live`: closed with code 1008. The live model bridge runs no tools but spends provider credentials.

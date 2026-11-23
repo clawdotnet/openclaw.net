@@ -9,25 +9,25 @@ OpenClaw.NET 通过 `SecretResolver`（静态门面）解析密钥，其背后�
 
 ## 凭据覆盖范围与优先级
 
-以下配置路径均相对于 `OpenClaw` 配置根节点。某个配置字段或 `*Ref` 属性存在，并不代表它支持 `vault:`；是否受保护取决于实际消费者是否调用 `SecretResolver`。以下清单依据当前解析调用点；标记为本轮差距的项目，在相应消费者改造完成前尚未受 OpenBao 保护。
+以下配置路径均相对于 `OpenClaw` 配置根节点。某个配置字段或 `*Ref` 属性存在，并不代表它支持 `vault:`；是否受保护取决于实际消费者是否调用 `SecretResolver`。以下清单依据当前解析调用点。
 
 | 优先级 | 配置字段 | 当前覆盖状态与建议 |
 |---|---|---|
-| P0 | `OpenClaw:AuthToken` / 计划新增的 `OpenClaw:AuthTokenRef` | 网关直接令牌目前只能使用字面值。本轮将新增 `AuthTokenRef`；直接值仅供本地迁移，公网绑定应使用 `env:`/`vault:` 引用。 |
+| P0 | `OpenClaw:AuthToken` / `OpenClaw:AuthTokenRef` | 网关在 Vault 预热后解析 `AuthTokenRef`；显式引用优先于 `OPENCLAW_AUTH_TOKEN` 环境变量回退。公网绑定必须配置 `AuthTokenRef` 或 OIDC，并拒绝内嵌 `AuthToken`。 |
 | P1 | `OpenClaw:Llm:ApiKey`、`OpenClaw:Models:Profiles[*]:ApiKey`、`OpenClaw:Multimodal:ElevenLabs:ApiKey`、图像/搜索工具消费者使用的 provider key，以及 `OpenClaw:DynamicTurnRouting:Jev:ApiKeyRef` | 现有消费者会解析这些值。生产环境应使用引用；请确认所选 provider/tool 确实消费对应字段。 |
 | P1 | `OpenClaw:Channels:Telegram:BotTokenRef`、`WebhookSecretTokenRef`；`Slack:BotTokenRef`、`SigningSecretRef`；`Discord:BotTokenRef`、`PublicKeyRef`；`WhatsApp:WebhookVerifyTokenRef`、`WebhookAppSecretRef`、`CloudApiTokenRef`、`BridgeTokenRef`；`Teams:AppPasswordRef`；`Sms:Twilio:AuthTokenRef`；`Feishu:AppSecretRef`；`DingTalk:AppKeyRef`、`AppSecretRef`；`WeCom:BotSecretRef`、`CorpSecretRef` | 这些凭据引用由 channel/webhook 解析路径消费。对应的直接值仍属于旧式配置；只有配置了引用时才由 OpenBao 保护。Channel ID、App ID、Tenant ID、Robot Code、Account ID 和电话号码默认属于标识符，而非凭据。 |
 | P1 | `OpenClaw:Plugins:Database:ConnectionString`、`Plugins:HomeAssistant:TokenRef`、`Plugins:Notion:ApiKeyRef`、`Plugins:Email:PasswordRef`、`Plugins:Mqtt:UsernameRef` / `PasswordRef`，以及 Nacos adapter 用户名/密码 | 现有工具与 adapter 消费者会调用 `SecretResolver`；在支持的字段中使用 `env:`/`vault:` 引用。 |
 | P1 | `OpenClaw:Workflows:Backends[*]:ApiTokenSecret`、`Authentication:ClientSecretRef`；MCP 委派凭据 `ClientSecretRef` / `SigningKeyRef`；`OpenClaw:Webhooks:Endpoints[*]:Secret`；`GmailPubSub:WebhookSecretRef` | 这些消费路径会解析引用。OAuth client ID、audience、endpoint、scope 和 webhook 元数据不是秘密。 |
-| P1 | `OpenClaw:Payments:StripeLink:EnvironmentVariables[*]` | 当前缺口：Stripe Link 会把该 map 直接传给 CLI，不解析密钥引用。本轮将按变量名分类凭据，并在启动进程前解析引用；非敏感标识符保持不变。 |
-| P1 | `OpenClaw:Channels:WhatsApp:FirstPartyWorker:Proxy` 和 `Accounts[*]:Proxy` | 当前缺口：worker 代理 URL 未经解析便发送给 worker。本轮将于 worker 边界解析完整 URL 的 `env:`/`vault:` 引用，并将 URI userinfo 视为内嵌凭据。 |
+| P1 | `OpenClaw:Payments:StripeLink:EnvironmentVariables[*]` | 按环境变量名分类敏感凭据，并在启动 CLI 前于独立环境副本中解析其 `env:`/`vault:`（或显式允许的 `raw:`）引用；非敏感标识符保持不变。 |
+| P1 | `OpenClaw:Channels:WhatsApp:FirstPartyWorker:Proxy` 和 `Accounts[*]:Proxy` | Worker 边界解析完整 URL 的 `env:`/`vault:`（或显式允许的 `raw:`）引用。URI userinfo 中嵌入的凭据视为内嵌凭据，公网绑定会拒绝。 |
 | P2 | `OpenClaw:CodingBackends:*:SecretRef` 与 connected account 的 `SecretRef` | 现有凭据消费者会解析这些引用。Token 文件和受保护 blob 模式继续支持；OAuth 签发与刷新不在本设计范围。 |
 | 缺口 | `OpenClaw:GmailPubSub:CredentialsPath` / `CredentialsPathRef` | 已声明路径，但没有 Gmail service-account 凭据加载器消费它。不得声称文件内容已由 OpenBao 保护。 |
-| 缺口 | 旧版 `admin-settings.json` 快照及设置/导出投影中的 WhatsApp 值 | 快照可能包含 webhook、Cloud API、bridge 和代理内嵌凭据。本轮将保留本地旧数据加载并输出仅含字段名的警告，之后新快照及脱敏响应/导出不再包含内嵌值。 |
+| 迁移兼容 | 旧版 `admin-settings.json` 快照及设置/导出投影中的 WhatsApp 值 | 本地部署仍可加载旧快照，并只输出字段路径、不包含值的警告；设置写入前旧文件保持不变。新快照写入、设置/setup 响应、agent bundle/support 导出及审计记录均不包含 WhatsApp webhook、Cloud API、bridge 和代理的内嵌凭据；公网 hardening 会拒绝旧式内嵌凭据。 |
 | 不在范围内 | 对话、记忆、附件、个人数据、WhatsApp 协议 session 文件、一次性支付秘密、TLS 终止私钥，以及应用/业务数据 | 本轮凭据改造不应将这些内容存入普通 OpenBao KV；如有需要，应采用独立的数据保护和密钥管理策略。 |
 
 KV v2 路径使用 `secret/data/openclaw/<environment>/<service>#<key>`，例如 `vault:secret/data/openclaw/prod/gateway#auth_token` 或 `vault:secret/data/openclaw/prod/channels/slack#bot_token`。名称使用稳定的小写格式；路径或 key 名不得包含秘密值或个人数据。OpenBao token 应由外部 bootstrap 来源（例如 `env:VAULT_TOKEN`）提供，不得把 Vault token 存入同一 KV 后端。
 
-本轮将在公网绑定时拒绝内嵌凭据并接受 `env:`/`vault:` 引用；现有 `raw:` 兼容开关默认保持关闭。本地部署在迁移期间继续兼容旧字面值。OpenBao 后端仅支持 JIT 发布；NativeAOT 发布不包含该后端。
+公网绑定会拒绝内嵌凭据并接受 `env:`/`vault:` 引用。`raw:` 兼容开关（`OpenClaw:Security:AllowRawSecretRefsOnPublicBind=true`）默认关闭。本地部署在迁移期间继续兼容旧字面值。OpenBao 后端仅支持 JIT 发布；NativeAOT 发布不包含该后端。
 
 ## 引用语法
 

@@ -86,6 +86,20 @@ Add to `appsettings.json`:
 | `HistorySync` | `true` | Per-account history sync override |
 | `Proxy` | inherited | Per-account proxy override |
 
+### Proxy credentials
+
+Avoid putting proxy usernames/passwords directly in the URI. Store the complete proxy URL in OpenBao or an environment variable, then set `Proxy` to its reference:
+
+```json
+{
+  "Proxy": "vault:secret/data/openclaw/prod/channels/whatsapp#proxy_url"
+}
+```
+
+Use the same form for `FirstPartyWorker.Proxy` or an account's `Accounts[].Proxy`; the referenced value must be the full proxy URL. References are resolved at the worker boundary after secret pre-warming. On public binds, proxy URI userinfo and other inline credentials are rejected; `raw:` references require the explicit public-bind compatibility opt-in.
+
+Legacy local `admin-settings.json` files with inline WhatsApp credentials remain loadable and produce a warning containing field paths only. New persisted snapshots and settings/setup responses, agent bundle exports, and audit records omit inline WhatsApp credentials. In the WhatsApp setup update API, a `null` proxy keeps the current value for that account, while an empty string clears it.
+
 ## Authentication Flow
 
 ### QR Code (default)
