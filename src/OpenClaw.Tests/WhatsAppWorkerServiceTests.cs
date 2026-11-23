@@ -1,13 +1,79 @@
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
+using OpenClaw.Agent.Plugins;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Plugins;
+using OpenClaw.Core.Security;
 using OpenClaw.WhatsApp.BaileysWorker;
 using Xunit;
 
 namespace OpenClaw.Tests;
 
-public sealed class WhatsAppWorkerServiceTests
+[Collection(ResolverAccessorCollection.Name)]
+public sealed class WhatsAppWorkerServiceTests : IDisposable
 {
+    public WhatsAppWorkerServiceTests() => ResolverAccessor.Reset();
+    public void Dispose() => ResolverAccessor.Reset();
+
+    [Fact]
+    public void ResolveProxyReferences_ResolvesGlobalAndAccountReferences_WithoutMutatingInput()
+    {
+        UseResolver(reference => reference switch
+        {
+            "env:WA_PROXY" => "http://global-proxy.example.test:8080",
+            "vault:secret/data/wa#account_proxy" => "http://account-proxy.example.test:8080",
+            _ => null
+        });
+        var config = new WhatsAppFirstPartyWorkerConfig
+        {
+            Proxy = "env:WA_PROXY",
+            Accounts =
+            [
+                new WhatsAppWorkerAccountConfig
+                {
+                    AccountId = "account-a",
+                    Proxy = "vault:secret/data/wa#account_proxy"
+                },
+                new WhatsAppWorkerAccountConfig
+                {
+                    AccountId = "account-b",
+                    Proxy = "http://proxy.example.test:8080"
+                }
+            ]
+        };
+
+        var resolved = FirstPartyWhatsAppWorkerHost.ResolveProxyReferences(config);
+
+        Assert.Equal("http://global-proxy.example.test:8080", resolved.Proxy);
+        Assert.Equal("http://account-proxy.example.test:8080", resolved.Accounts[0].Proxy);
+        Assert.Equal("http://proxy.example.test:8080", resolved.Accounts[1].Proxy);
+        Assert.Equal("env:WA_PROXY", config.Proxy);
+        Assert.Equal("vault:secret/data/wa#account_proxy", config.Accounts[0].Proxy);
+    }
+
+    [Fact]
+    public void ResolveProxyReferences_MissingReference_ThrowsWithoutEchoingValue()
+    {
+        UseResolver(_ => null);
+        var config = new WhatsAppFirstPartyWorkerConfig
+        {
+            Accounts =
+            [
+                new WhatsAppWorkerAccountConfig
+                {
+                    AccountId = "account-a",
+                    Proxy = "env:PRIVATE_PROXY_NAME"
+                }
+            ]
+        };
+
+        var error = Assert.Throws<InvalidOperationException>(
+            () => FirstPartyWhatsAppWorkerHost.ResolveProxyReferences(config));
+
+        Assert.Contains("Channels.WhatsApp.FirstPartyWorker.Accounts[0].Proxy", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("PRIVATE_PROXY_NAME", error.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task StartAsync_SimulatedDriver_EmitsPerAccountAuthEvents_AndSelfIds()
     {
@@ -188,5 +254,23 @@ public sealed class WhatsAppWorkerServiceTests
         }));
 
         Assert.Contains("Driver='simulated'", ex.Message, StringComparison.Ordinal);
+    }
+
+    private static void UseResolver(Func<string?, string?> resolve)
+    {
+        var resolver = new DelegateSecretResolver(resolve);
+        ResolverAccessor.Use(new ServiceCollection()
+            .AddSingleton<ISecretResolver>(resolver)
+            .BuildServiceProvider());
+    }
+
+    private sealed class DelegateSecretResolver(Func<string?, string?> resolve) : ISecretResolver
+    {
+        public ValueTask<string?> ResolveAsync(string? secretRef, CancellationToken ct = default)
+            => ValueTask.FromResult(resolve(secretRef));
+
+        public string? Resolve(string? secretRef) => resolve(secretRef);
+
+        public bool IsRawRef(string? secretRef) => SecretResolver.IsRawRef(secretRef);
     }
 }

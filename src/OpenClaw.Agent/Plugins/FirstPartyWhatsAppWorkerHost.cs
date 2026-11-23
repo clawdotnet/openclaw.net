@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Observability;
 using OpenClaw.Core.Plugins;
+using OpenClaw.Core.Security;
 
 namespace OpenClaw.Agent.Plugins;
 
@@ -47,10 +48,11 @@ public sealed class FirstPartyWhatsAppWorkerHost : IAsyncDisposable
         if (_channels.Count > 0)
             return _channels;
 
+        var workerConfig = ResolveProxyReferences(config);
         var initResult = await _bridge.StartAsync(
             WorkerEntryPath,
             WorkerPluginId,
-            JsonSerializer.SerializeToElement(config, CoreJsonContext.Default.WhatsAppFirstPartyWorkerConfig),
+            JsonSerializer.SerializeToElement(workerConfig, CoreJsonContext.Default.WhatsAppFirstPartyWorkerConfig),
             ct);
 
         if (!initResult.Compatible)
@@ -98,6 +100,38 @@ public sealed class FirstPartyWhatsAppWorkerHost : IAsyncDisposable
         });
 
         return _channels;
+    }
+
+    internal static WhatsAppFirstPartyWorkerConfig ResolveProxyReferences(WhatsAppFirstPartyWorkerConfig config)
+    {
+        var copy = JsonSerializer.Deserialize(
+            JsonSerializer.SerializeToUtf8Bytes(config, CoreJsonContext.Default.WhatsAppFirstPartyWorkerConfig),
+            CoreJsonContext.Default.WhatsAppFirstPartyWorkerConfig)
+            ?? throw new InvalidOperationException("Could not copy WhatsApp worker configuration.");
+
+        copy.Proxy = ResolveProxyReference(copy.Proxy, "Channels.WhatsApp.FirstPartyWorker.Proxy");
+        for (var index = 0; index < copy.Accounts.Count; index++)
+        {
+            copy.Accounts[index].Proxy = ResolveProxyReference(
+                copy.Accounts[index].Proxy,
+                $"Channels.WhatsApp.FirstPartyWorker.Accounts[{index}].Proxy");
+        }
+
+        return copy;
+    }
+
+    private static string? ResolveProxyReference(string? value, string fieldPath)
+    {
+        if (string.IsNullOrWhiteSpace(value) ||
+            !(value.StartsWith("env:", StringComparison.OrdinalIgnoreCase) ||
+              value.StartsWith("vault:", StringComparison.OrdinalIgnoreCase) ||
+              value.StartsWith("raw:", StringComparison.OrdinalIgnoreCase)))
+        {
+            return value;
+        }
+
+        return SecretResolver.Resolve(value)
+            ?? throw new InvalidOperationException($"{fieldPath} is configured but could not be resolved.");
     }
 
     public static BridgeProcessLaunchSpec ResolveLaunchSpec(WhatsAppFirstPartyWorkerConfig config)
