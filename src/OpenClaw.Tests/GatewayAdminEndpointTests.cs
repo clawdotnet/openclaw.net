@@ -7903,6 +7903,126 @@ public sealed partial class GatewayAdminEndpointTests
     }
 
     [Fact]
+    public async Task AdminSettingsAndWhatsAppResponses_RedactCredentialsAndProxyUserInfo()
+    {
+        const string verifyToken = "marker-secret-verify";
+        const string appSecret = "marker-secret-app";
+        const string cloudToken = "marker-secret-cloud";
+        const string bridgeToken = "marker-secret-bridge";
+        const string proxyPassword = "marker-proxy-password";
+        await using var harness = await CreateHarnessAsync(nonLoopbackBind: false, config =>
+        {
+            config.Channels.WhatsApp.WebhookVerifyToken = verifyToken;
+            config.Channels.WhatsApp.WebhookVerifyTokenRef = "env:WA_VERIFY";
+            config.Channels.WhatsApp.WebhookAppSecret = appSecret;
+            config.Channels.WhatsApp.WebhookAppSecretRef = "env:WA_APP_SECRET";
+            config.Channels.WhatsApp.CloudApiToken = cloudToken;
+            config.Channels.WhatsApp.CloudApiTokenRef = "env:WA_TOKEN";
+            config.Channels.WhatsApp.BridgeToken = bridgeToken;
+            config.Channels.WhatsApp.BridgeTokenRef = "env:WA_BRIDGE";
+            config.Channels.WhatsApp.FirstPartyWorker.Proxy = $"raw:http://user:{proxyPassword}@proxy.example.test:8080";
+            config.Channels.WhatsApp.FirstPartyWorker.Accounts.Add(new WhatsAppWorkerAccountConfig
+            {
+                AccountId = "ref-account",
+                Proxy = "vault:secret/data/wa#proxy"
+            });
+        });
+
+        using var settingsRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/settings");
+        settingsRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        using var settingsResponse = await harness.Client.SendAsync(settingsRequest);
+        settingsResponse.EnsureSuccessStatusCode();
+        var settingsJson = await settingsResponse.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("marker-secret-", settingsJson, StringComparison.Ordinal);
+        Assert.DoesNotContain(proxyPassword, settingsJson, StringComparison.Ordinal);
+        Assert.Contains("env:WA_TOKEN", settingsJson, StringComparison.Ordinal);
+
+        using var settingsDocument = JsonDocument.Parse(settingsJson);
+        var settingsPayload = settingsDocument.RootElement.GetProperty("settings").GetRawText();
+        using var saveSettingsRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/settings")
+        {
+            Content = JsonContent(settingsPayload)
+        };
+        saveSettingsRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        using var saveSettingsResponse = await harness.Client.SendAsync(saveSettingsRequest);
+        saveSettingsResponse.EnsureSuccessStatusCode();
+        var savedSettingsJson = await saveSettingsResponse.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("marker-secret-", savedSettingsJson, StringComparison.Ordinal);
+        Assert.DoesNotContain(proxyPassword, savedSettingsJson, StringComparison.Ordinal);
+        var runningSnapshot = harness.App.Services.GetRequiredService<AdminSettingsService>().GetSnapshot();
+        Assert.Equal(cloudToken, runningSnapshot.WhatsAppCloudApiToken);
+        Assert.Equal($"raw:http://user:{proxyPassword}@proxy.example.test:8080", runningSnapshot.WhatsAppFirstPartyWorker.Proxy);
+
+        using var bundleRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/agent-bundle/export");
+        bundleRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        using var bundleResponse = await harness.Client.SendAsync(bundleRequest);
+        bundleResponse.EnsureSuccessStatusCode();
+        var bundleJson = await bundleResponse.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("marker-secret-", bundleJson, StringComparison.Ordinal);
+        Assert.DoesNotContain(proxyPassword, bundleJson, StringComparison.Ordinal);
+
+        using var setupRequest = new HttpRequestMessage(HttpMethod.Get, "/admin/channels/whatsapp/setup");
+        setupRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        using var setupResponse = await harness.Client.SendAsync(setupRequest);
+        setupResponse.EnsureSuccessStatusCode();
+        var setupJson = await setupResponse.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("marker-secret-", setupJson, StringComparison.Ordinal);
+        Assert.DoesNotContain(proxyPassword, setupJson, StringComparison.Ordinal);
+        using var setupDocument = JsonDocument.Parse(setupJson);
+        var setupPayload = setupDocument.RootElement;
+        Assert.True(setupPayload.GetProperty("firstPartyWorkerProxyConfigured").GetBoolean());
+        Assert.Contains("ref-account", setupPayload.GetProperty("firstPartyWorkerAccountProxyConfiguredIds").EnumerateArray()
+            .Select(static item => item.GetString()));
+        Assert.Equal("vault:secret/data/wa#proxy",
+            setupPayload.GetProperty("firstPartyWorker").GetProperty("accounts")[0].GetProperty("proxy").GetString());
+
+        var update = new WhatsAppSetupRequest
+        {
+            Enabled = true,
+            Type = "first_party_worker",
+            DmPolicy = "pairing",
+            WebhookVerifyToken = verifyToken,
+            WebhookVerifyTokenRef = "env:WA_VERIFY",
+            WebhookAppSecret = appSecret,
+            WebhookAppSecretRef = "env:WA_APP_SECRET",
+            CloudApiToken = cloudToken,
+            CloudApiTokenRef = "env:WA_TOKEN",
+            BridgeToken = bridgeToken,
+            BridgeTokenRef = "env:WA_BRIDGE",
+            FirstPartyWorker = new WhatsAppFirstPartyWorkerConfig
+            {
+                Driver = "simulated",
+                Accounts =
+                [
+                    new WhatsAppWorkerAccountConfig
+                    {
+                        AccountId = "audit-account",
+                        SessionPath = "./session/audit",
+                        PairingMode = "qr",
+                        Proxy = $"raw:http://user:{proxyPassword}@proxy.example.test:8080"
+                    }
+                ]
+            }
+        };
+        using var updateSetupRequest = new HttpRequestMessage(HttpMethod.Put, "/admin/channels/whatsapp/setup")
+        {
+            Content = JsonContent(JsonSerializer.Serialize(update, CoreJsonContext.Default.WhatsAppSetupRequest))
+        };
+        updateSetupRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", harness.AuthToken);
+        using var updateSetupResponse = await harness.Client.SendAsync(updateSetupRequest);
+        updateSetupResponse.EnsureSuccessStatusCode();
+        var updateSetupJson = await updateSetupResponse.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("marker-secret-", updateSetupJson, StringComparison.Ordinal);
+        Assert.DoesNotContain(proxyPassword, updateSetupJson, StringComparison.Ordinal);
+
+        var audit = harness.Runtime.Operations.OperatorAudit
+            .Query(new OperatorAuditQuery { Limit = 20 })
+            .First(static entry => entry.ActionType == "whatsapp_setup_update");
+        Assert.DoesNotContain("marker-secret-", audit.After, StringComparison.Ordinal);
+        Assert.DoesNotContain(proxyPassword, audit.After, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task WhatsAppAuthEndpoints_ReturnPerAccountState_AndSupportFiltering()
     {
         await using var harness = await CreateHarnessAsync(nonLoopbackBind: true);

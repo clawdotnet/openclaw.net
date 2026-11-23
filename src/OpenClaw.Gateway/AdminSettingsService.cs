@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Validation;
+using OpenClaw.Gateway.Extensions;
 
 namespace OpenClaw.Gateway;
 
@@ -113,6 +114,50 @@ internal sealed partial class AdminSettingsService
             WhatsAppFirstPartyWorker = CloneWhatsAppFirstPartyWorker(config.Channels.WhatsApp.FirstPartyWorker)
         };
 
+    internal static AdminSettingsSnapshot SanitizeSnapshot(AdminSettingsSnapshot snapshot)
+    {
+        var node = JsonSerializer.SerializeToNode(snapshot, CoreJsonContext.Default.AdminSettingsSnapshot)
+            ?? throw new InvalidOperationException("Could not serialize admin settings for redaction.");
+        var root = node.AsObject();
+        root["whatsappWebhookVerifyToken"] = null;
+        root["whatsappWebhookAppSecret"] = null;
+        root["whatsappCloudApiToken"] = null;
+        root["whatsappBridgeToken"] = null;
+
+        if (root["whatsappFirstPartyWorker"] is JsonObject worker)
+        {
+            SanitizeProxy(worker);
+            if (worker["accounts"] is JsonArray accounts)
+            {
+                foreach (var account in accounts.OfType<JsonObject>())
+                    SanitizeProxy(account);
+            }
+        }
+
+        return node.Deserialize(CoreJsonContext.Default.AdminSettingsSnapshot)
+            ?? throw new InvalidOperationException("Could not deserialize redacted admin settings.");
+    }
+
+    internal static IReadOnlyList<string> FindLegacyInlineCredentialPaths(AdminSettingsSnapshot snapshot)
+    {
+        var paths = new List<string>();
+        AddCredentialPath(paths, snapshot.WhatsAppWebhookVerifyToken, "OpenClaw:Channels:WhatsApp:WebhookVerifyToken");
+        AddCredentialPath(paths, snapshot.WhatsAppWebhookAppSecret, "OpenClaw:Channels:WhatsApp:WebhookAppSecret");
+        AddCredentialPath(paths, snapshot.WhatsAppCloudApiToken, "OpenClaw:Channels:WhatsApp:CloudApiToken");
+        AddCredentialPath(paths, snapshot.WhatsAppBridgeToken, "OpenClaw:Channels:WhatsApp:BridgeToken");
+
+        var worker = snapshot.WhatsAppFirstPartyWorker;
+        if (GatewaySecurityExtensions.HasProxyUriUserInfo(worker.Proxy))
+            paths.Add("OpenClaw:Channels:WhatsApp:FirstPartyWorker:Proxy");
+        for (var index = 0; index < worker.Accounts.Count; index++)
+        {
+            if (GatewaySecurityExtensions.HasProxyUriUserInfo(worker.Accounts[index].Proxy))
+                paths.Add($"OpenClaw:Channels:WhatsApp:FirstPartyWorker:Accounts[{index}]:Proxy");
+        }
+
+        return paths;
+    }
+
     public static bool TryLoadPersistedSnapshot(string settingsPath, out AdminSettingsSnapshot? snapshot, out string? error)
     {
         snapshot = null;
@@ -140,8 +185,14 @@ internal sealed partial class AdminSettingsService
         }
     }
 
-    public static void ApplySnapshot(GatewayConfig config, AdminSettingsSnapshot snapshot)
+    public static void ApplySnapshot(
+        GatewayConfig config,
+        AdminSettingsSnapshot snapshot,
+        bool preserveHiddenCredentials = false)
     {
+        if (preserveHiddenCredentials)
+            snapshot = PreserveHiddenCredentials(snapshot, CreateSnapshot(config));
+
         // Provider selection belongs to secure setup, never an admin snapshot override.
         if (snapshot.ModelName is not null) config.Llm.Model = snapshot.ModelName;
         if (snapshot.DefaultModelProfile is not null) config.Models.DefaultProfile = string.IsNullOrWhiteSpace(snapshot.DefaultModelProfile) ? null : snapshot.DefaultModelProfile;
@@ -231,12 +282,18 @@ internal sealed partial class AdminSettingsService
     }
 
     public AdminSettingsResult Update(AdminSettingsSnapshot snapshot)
+        => UpdateCore(snapshot, preserveHiddenCredentials: true);
+
+    private AdminSettingsResult UpdateCore(AdminSettingsSnapshot snapshot, bool preserveHiddenCredentials)
     {
         lock (_gate)
         {
             var previous = CreateSnapshot(_config);
+            var appliedSnapshot = preserveHiddenCredentials
+                ? PreserveHiddenCredentials(snapshot, previous)
+                : snapshot;
             var clone = CloneConfig(_config);
-            ApplySnapshot(clone, snapshot);
+            ApplySnapshot(clone, appliedSnapshot);
 
             var errors = ConfigValidator.Validate(clone);
             if (errors.Count > 0)
@@ -256,7 +313,7 @@ internal sealed partial class AdminSettingsService
                 _logger.LogWarning(ex, "Could not persist admin settings");
                 return new(false, previous, BuildPersistenceInfo(), false, [], ["Settings could not be saved. No changes were applied."]);
             }
-            ApplySnapshot(_config, snapshot);
+            ApplySnapshot(_config, appliedSnapshot);
             var changedRestartFields = GetRestartRequiredChanges(_runningSnapshot, CreateSnapshot(_config));
             return new AdminSettingsResult(
                 true,
@@ -302,7 +359,7 @@ internal sealed partial class AdminSettingsService
         lock (_gate)
         {
             var current = CreateSnapshot(_config);
-            return Update(CloneSnapshotWithWhatsApp(current, request));
+            return UpdateCore(CloneSnapshotWithWhatsApp(current, request), preserveHiddenCredentials: false);
         }
     }
 
@@ -396,7 +453,9 @@ internal sealed partial class AdminSettingsService
             if (JsonNode.DeepEquals(node[key], before[key])) node[key] = existing[key]?.DeepClone();
             else if (JsonNode.DeepEquals(node[key], baseline[key])) node[key] = null;
         }
-        var saved = node.Deserialize(CoreJsonContext.Default.AdminSettingsSnapshot)!;
+        var saved = SanitizeSnapshot(
+            node.Deserialize(CoreJsonContext.Default.AdminSettingsSnapshot)
+            ?? throw new InvalidOperationException("Could not deserialize admin settings for persistence."));
         Directory.CreateDirectory(Path.GetDirectoryName(_settingsPath)!);
         var tempPath = _settingsPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
@@ -589,7 +648,9 @@ internal sealed partial class AdminSettingsService
             WhatsAppBridgeToken = bridgeToken,
             WhatsAppBridgeTokenRef = request.BridgeTokenRef,
             WhatsAppBridgeSuppressSendExceptions = request.BridgeSuppressSendExceptions,
-            WhatsAppFirstPartyWorker = CloneWhatsAppFirstPartyWorker(request.FirstPartyWorker ?? source.WhatsAppFirstPartyWorker)
+            WhatsAppFirstPartyWorker = MergeWhatsAppFirstPartyWorker(
+                source.WhatsAppFirstPartyWorker,
+                request.FirstPartyWorker)
         };
     }
 
@@ -599,6 +660,101 @@ internal sealed partial class AdminSettingsService
             return requestedValue;
 
         return string.IsNullOrWhiteSpace(requestedRef) ? null : existingValue;
+    }
+
+    private static WhatsAppFirstPartyWorkerConfig MergeWhatsAppFirstPartyWorker(
+        WhatsAppFirstPartyWorkerConfig current,
+        WhatsAppFirstPartyWorkerConfig? requested)
+    {
+        if (requested is null)
+            return CloneWhatsAppFirstPartyWorker(current);
+
+        var merged = CloneWhatsAppFirstPartyWorker(requested);
+        if (requested.Proxy is null)
+            merged.Proxy = current.Proxy;
+
+        foreach (var account in merged.Accounts)
+        {
+            if (account.Proxy is not null)
+                continue;
+
+            var previous = current.Accounts.FirstOrDefault(existing =>
+                string.Equals(existing.AccountId, account.AccountId, StringComparison.Ordinal));
+            account.Proxy = previous?.Proxy;
+        }
+
+        return merged;
+    }
+
+    private static void AddCredentialPath(ICollection<string> paths, string? value, string path)
+    {
+        if (!string.IsNullOrWhiteSpace(value) &&
+            !value.StartsWith("env:", StringComparison.OrdinalIgnoreCase) &&
+            !value.StartsWith("vault:", StringComparison.OrdinalIgnoreCase))
+            paths.Add(path);
+    }
+
+    private static AdminSettingsSnapshot PreserveHiddenCredentials(
+        AdminSettingsSnapshot incoming,
+        AdminSettingsSnapshot current)
+    {
+        var incomingNode = JsonSerializer.SerializeToNode(incoming, CoreJsonContext.Default.AdminSettingsSnapshot)
+            ?? throw new InvalidOperationException("Could not serialize admin settings for credential preservation.");
+        var currentNode = JsonSerializer.SerializeToNode(current, CoreJsonContext.Default.AdminSettingsSnapshot)
+            ?? throw new InvalidOperationException("Could not serialize current admin settings for credential preservation.");
+        var incomingRoot = incomingNode.AsObject();
+        var currentRoot = currentNode.AsObject();
+
+        foreach (var property in new[]
+        {
+            "whatsappWebhookVerifyToken",
+            "whatsappWebhookAppSecret",
+            "whatsappCloudApiToken",
+            "whatsappBridgeToken"
+        })
+        {
+            if (incomingRoot[property] is null)
+                incomingRoot[property] = currentRoot[property]?.DeepClone();
+        }
+
+        if (incomingRoot["whatsappFirstPartyWorker"] is JsonObject incomingWorker &&
+            currentRoot["whatsappFirstPartyWorker"] is JsonObject currentWorker)
+        {
+            if (incomingWorker["proxy"] is null)
+                incomingWorker["proxy"] = currentWorker["proxy"]?.DeepClone();
+            if (incomingWorker["accounts"] is JsonArray incomingAccounts &&
+                currentWorker["accounts"] is JsonArray currentAccounts)
+            {
+                foreach (var account in incomingAccounts.OfType<JsonObject>())
+                {
+                    if (account["proxy"] is not null)
+                        continue;
+
+                    var accountId = ReadJsonString(account["accountId"]);
+                    var previousAccount = currentAccounts.OfType<JsonObject>()
+                        .FirstOrDefault(previous =>
+                            string.Equals(ReadJsonString(previous["accountId"]), accountId, StringComparison.Ordinal));
+                    if (previousAccount is not null)
+                        account["proxy"] = previousAccount["proxy"]?.DeepClone();
+                }
+            }
+        }
+
+        return incomingNode.Deserialize(CoreJsonContext.Default.AdminSettingsSnapshot)
+            ?? throw new InvalidOperationException("Could not deserialize admin settings after credential preservation.");
+    }
+
+    private static string? ReadJsonString(JsonNode? node)
+        => node is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
+
+    private static void SanitizeProxy(JsonObject config)
+    {
+        if (config["proxy"] is JsonValue proxyNode &&
+            proxyNode.TryGetValue<string>(out var proxy) &&
+            GatewaySecurityExtensions.HasProxyUriUserInfo(proxy))
+        {
+            config["proxy"] = null;
+        }
     }
 
     private static WhatsAppFirstPartyWorkerConfig CloneWhatsAppFirstPartyWorker(WhatsAppFirstPartyWorkerConfig? source)

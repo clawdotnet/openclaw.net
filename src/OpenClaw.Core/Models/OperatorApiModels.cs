@@ -320,6 +320,8 @@ public sealed class WhatsAppSetupResponse
     public string BridgeTokenRef { get; init; } = "env:WHATSAPP_BRIDGE_TOKEN";
     public bool BridgeSuppressSendExceptions { get; init; }
     public WhatsAppFirstPartyWorkerConfig? FirstPartyWorker { get; init; }
+    public bool FirstPartyWorkerProxyConfigured { get; init; }
+    public string[] FirstPartyWorkerAccountProxyConfiguredIds { get; init; } = [];
     public string? FirstPartyWorkerConfigJson { get; init; }
     public string? FirstPartyWorkerConfigSchemaJson { get; init; }
     public bool PluginDetected { get; init; }

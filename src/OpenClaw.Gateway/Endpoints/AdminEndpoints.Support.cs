@@ -23,6 +23,7 @@ using OpenClaw.Core.Validation;
 using OpenClaw.Gateway;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Composition;
+using OpenClaw.Gateway.Extensions;
 using OpenClaw.Gateway.Models;
 using QRCoder;
 
@@ -134,7 +135,7 @@ internal static partial class AdminEndpoints
 
         return new AdminSettingsResponse
         {
-            Settings = snapshot ?? adminSettings.GetSnapshot(),
+            Settings = AdminSettingsService.SanitizeSnapshot(snapshot ?? adminSettings.GetSnapshot()),
             Persistence = persistence ?? adminSettings.GetPersistence(),
             Message = message ?? "Settings loaded.",
             RestartRequired = restartRequired,
@@ -1171,6 +1172,8 @@ internal static partial class AdminEndpoints
         string? pluginWarningOverride = null)
     {
         var snapshot = adminSettings.GetSnapshot();
+        var worker = snapshot.WhatsAppFirstPartyWorker;
+        var sanitizedWorker = SanitizeWhatsAppWorkerConfig(worker);
         var readiness = MapChannelReadiness(ChannelReadinessEvaluator.Evaluate(startup.Config, startup.IsNonLoopbackBind))
             .FirstOrDefault(static item => string.Equals(item.ChannelId, "whatsapp", StringComparison.Ordinal));
         var isFirstPartyWorker = string.Equals(snapshot.WhatsAppType, "first_party_worker", StringComparison.OrdinalIgnoreCase)
@@ -1222,8 +1225,15 @@ internal static partial class AdminEndpoints
             BridgeTokenConfigured = HasConfiguredSecretValue(snapshot.WhatsAppBridgeToken, snapshot.WhatsAppBridgeTokenRef),
             BridgeTokenRef = snapshot.WhatsAppBridgeTokenRef,
             BridgeSuppressSendExceptions = snapshot.WhatsAppBridgeSuppressSendExceptions,
-            FirstPartyWorker = snapshot.WhatsAppFirstPartyWorker,
-            FirstPartyWorkerConfigJson = PrettyJson(JsonSerializer.SerializeToElement(snapshot.WhatsAppFirstPartyWorker, CoreJsonContext.Default.WhatsAppFirstPartyWorkerConfig)),
+            FirstPartyWorker = sanitizedWorker,
+            FirstPartyWorkerProxyConfigured = !string.IsNullOrWhiteSpace(worker.Proxy),
+            FirstPartyWorkerAccountProxyConfiguredIds = worker.Accounts
+                .Where(static account => !string.IsNullOrWhiteSpace(account.Proxy) && !string.IsNullOrWhiteSpace(account.AccountId))
+                .Select(static account => account.AccountId)
+                .ToArray(),
+            FirstPartyWorkerConfigJson = sanitizedWorker is null
+                ? null
+                : PrettyJson(JsonSerializer.SerializeToElement(sanitizedWorker, CoreJsonContext.Default.WhatsAppFirstPartyWorkerConfig)),
             FirstPartyWorkerConfigSchemaJson = GetWhatsAppFirstPartyWorkerConfigSchemaJson(),
             PluginDetected = pluginId is not null,
             PluginId = pluginId,
@@ -1316,6 +1326,76 @@ internal static partial class AdminEndpoints
         return string.Equals(snapshot.WhatsAppType, "bridge", StringComparison.OrdinalIgnoreCase)
             ? "built_in_bridge"
             : "official";
+    }
+
+    private static WhatsAppFirstPartyWorkerConfig? SanitizeWhatsAppWorkerConfig(WhatsAppFirstPartyWorkerConfig? worker)
+    {
+        if (worker is null)
+            return null;
+
+        var sanitized = JsonSerializer.Deserialize(
+            JsonSerializer.SerializeToUtf8Bytes(worker, CoreJsonContext.Default.WhatsAppFirstPartyWorkerConfig),
+            CoreJsonContext.Default.WhatsAppFirstPartyWorkerConfig)
+            ?? throw new InvalidOperationException("Could not copy WhatsApp worker configuration for redaction.");
+
+        if (GatewaySecurityExtensions.HasProxyUriUserInfo(sanitized.Proxy))
+            sanitized.Proxy = null;
+        foreach (var account in sanitized.Accounts)
+        {
+            if (GatewaySecurityExtensions.HasProxyUriUserInfo(account.Proxy))
+                account.Proxy = null;
+        }
+
+        return sanitized;
+    }
+
+    private static WhatsAppSetupRequest SanitizeWhatsAppSetupRequestForAudit(WhatsAppSetupRequest request)
+    {
+        var workerConfigJson = SanitizeWhatsAppWorkerConfigJson(request.FirstPartyWorkerConfigJson);
+        return new WhatsAppSetupRequest
+        {
+            Enabled = request.Enabled,
+            Type = request.Type,
+            DmPolicy = request.DmPolicy,
+            WebhookPath = request.WebhookPath,
+            WebhookPublicBaseUrl = request.WebhookPublicBaseUrl,
+            WebhookVerifyToken = "",
+            WebhookVerifyTokenRef = request.WebhookVerifyTokenRef,
+            ValidateSignature = request.ValidateSignature,
+            WebhookAppSecret = null,
+            WebhookAppSecretRef = request.WebhookAppSecretRef,
+            CloudApiToken = null,
+            CloudApiTokenRef = request.CloudApiTokenRef,
+            PhoneNumberId = request.PhoneNumberId,
+            BusinessAccountId = request.BusinessAccountId,
+            BridgeUrl = request.BridgeUrl,
+            BridgeToken = null,
+            BridgeTokenRef = request.BridgeTokenRef,
+            BridgeSuppressSendExceptions = request.BridgeSuppressSendExceptions,
+            PluginId = request.PluginId,
+            PluginConfigJson = null,
+            FirstPartyWorker = SanitizeWhatsAppWorkerConfig(request.FirstPartyWorker),
+            FirstPartyWorkerConfigJson = workerConfigJson
+        };
+    }
+
+    private static string? SanitizeWhatsAppWorkerConfigJson(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
+        {
+            var worker = JsonSerializer.Deserialize(json, CoreJsonContext.Default.WhatsAppFirstPartyWorkerConfig);
+            var sanitized = SanitizeWhatsAppWorkerConfig(worker);
+            return sanitized is null
+                ? null
+                : JsonSerializer.Serialize(sanitized, CoreJsonContext.Default.WhatsAppFirstPartyWorkerConfig);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static (WhatsAppSetupRequest Request, List<string> Errors) NormalizeWhatsAppSetupRequest(WhatsAppSetupRequest request)
@@ -1469,7 +1549,8 @@ internal static partial class AdminEndpoints
             SessionMetadataSnapshot item => JsonSerializer.Serialize(item, CoreJsonContext.Default.SessionMetadataSnapshot),
             ActorRateLimitPolicy item => JsonSerializer.Serialize(item, CoreJsonContext.Default.ActorRateLimitPolicy),
             WebhookDeadLetterEntry item => JsonSerializer.Serialize(item, CoreJsonContext.Default.WebhookDeadLetterEntry),
-            AdminSettingsSnapshot item => JsonSerializer.Serialize(item, CoreJsonContext.Default.AdminSettingsSnapshot),
+            AdminSettingsSnapshot item => JsonSerializer.Serialize(AdminSettingsService.SanitizeSnapshot(item), CoreJsonContext.Default.AdminSettingsSnapshot),
+            WhatsAppSetupRequest item => JsonSerializer.Serialize(SanitizeWhatsAppSetupRequestForAudit(item), CoreJsonContext.Default.WhatsAppSetupRequest),
             HeartbeatConfigDto item => JsonSerializer.Serialize(item, CoreJsonContext.Default.HeartbeatConfigDto),
             _ => value.ToString()
         };

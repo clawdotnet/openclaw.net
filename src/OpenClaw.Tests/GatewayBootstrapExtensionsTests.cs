@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
+using OpenClaw.Core.Models;
 using OpenClaw.Core.Security;
+using OpenClaw.Gateway;
 using OpenClaw.Gateway.Bootstrap;
 using OpenClaw.Gateway.Extensions;
 using Xunit;
@@ -41,6 +43,128 @@ public sealed class GatewayBootstrapExtensionsTests
         finally
         {
             Environment.SetEnvironmentVariable("OPENCLAW_AUTH_TOKEN", previous);
+        }
+    }
+
+    [Fact]
+    public void LoadGatewayConfig_LegacyAdminCredentialsRemainLocalAndAreRejectedOnPublicBind()
+    {
+        const string verifyToken = "legacy-verify-marker";
+        const string cloudToken = "legacy-cloud-marker";
+        const string proxyPassword = "legacy-proxy-password-marker";
+        var storagePath = Path.Combine(Path.GetTempPath(), "openclaw-legacy-settings", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+        try
+        {
+            var filePath = AdminSettingsService.GetSettingsPath(new GatewayConfig
+            {
+                Memory = new MemoryConfig { StoragePath = storagePath }
+            });
+            var legacySnapshot = new AdminSettingsSnapshot
+            {
+                WhatsAppWebhookVerifyToken = verifyToken,
+                WhatsAppCloudApiToken = cloudToken,
+                WhatsAppFirstPartyWorker = new WhatsAppFirstPartyWorkerConfig
+                {
+                    Proxy = $"http://user:{proxyPassword}@proxy.example.test:8080"
+                }
+            };
+            var legacyFields = AdminSettingsService.FindLegacyInlineCredentialPaths(legacySnapshot);
+            Assert.Contains("OpenClaw:Channels:WhatsApp:WebhookVerifyToken", legacyFields);
+            Assert.Contains("OpenClaw:Channels:WhatsApp:FirstPartyWorker:Proxy", legacyFields);
+            Assert.DoesNotContain(verifyToken, string.Join(", ", legacyFields), StringComparison.Ordinal);
+            Assert.DoesNotContain(proxyPassword, string.Join(", ", legacyFields), StringComparison.Ordinal);
+            var originalJson = JsonSerializer.Serialize(legacySnapshot, CoreJsonContext.Default.AdminSettingsSnapshot);
+            File.WriteAllText(filePath, originalJson);
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["OpenClaw:BindAddress"] = "127.0.0.1",
+                    ["OpenClaw:Memory:StoragePath"] = storagePath
+                })
+                .Build();
+
+            var config = GatewayBootstrapExtensions.LoadGatewayConfig(configuration);
+
+            Assert.Equal(verifyToken, config.Channels.WhatsApp.WebhookVerifyToken);
+            Assert.Equal(cloudToken, config.Channels.WhatsApp.CloudApiToken);
+            Assert.Equal($"http://user:{proxyPassword}@proxy.example.test:8080", config.Channels.WhatsApp.FirstPartyWorker.Proxy);
+            Assert.Equal(originalJson, File.ReadAllText(filePath));
+
+            var error = Assert.Throws<InvalidOperationException>(
+                () => GatewaySecurityExtensions.EnforcePublicBindHardening(config, isNonLoopbackBind: true));
+            Assert.DoesNotContain(verifyToken, error.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain(cloudToken, error.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain(proxyPassword, error.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadGatewayConfig_RedactedAdminCredentials_PreservesBaseConfigurationValues()
+    {
+        var storagePath = Path.Combine(Path.GetTempPath(), "openclaw-redacted-settings", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storagePath);
+        try
+        {
+            var filePath = AdminSettingsService.GetSettingsPath(new GatewayConfig
+            {
+                Memory = new MemoryConfig { StoragePath = storagePath }
+            });
+            var persistedSnapshot = AdminSettingsService.SanitizeSnapshot(new AdminSettingsSnapshot
+            {
+                WhatsAppWebhookVerifyToken = "persisted-verify",
+                WhatsAppWebhookVerifyTokenRef = "",
+                WhatsAppWebhookAppSecret = "persisted-app-secret",
+                WhatsAppCloudApiToken = "persisted-cloud-token",
+                WhatsAppBridgeToken = "persisted-bridge-token",
+                WhatsAppFirstPartyWorker = new WhatsAppFirstPartyWorkerConfig
+                {
+                    Proxy = "http://persisted-user:persisted-password@proxy.example.test:8080",
+                    Accounts =
+                    [
+                        new WhatsAppWorkerAccountConfig
+                        {
+                            AccountId = "base-account",
+                            Proxy = "http://persisted-user:persisted-password@proxy.example.test:8080"
+                        }
+                    ]
+                }
+            });
+            File.WriteAllText(
+                filePath,
+                JsonSerializer.Serialize(persistedSnapshot, CoreJsonContext.Default.AdminSettingsSnapshot));
+
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["OpenClaw:BindAddress"] = "127.0.0.1",
+                    ["OpenClaw:Memory:StoragePath"] = storagePath,
+                    ["OpenClaw:Channels:WhatsApp:WebhookVerifyToken"] = "base-verify",
+                    ["OpenClaw:Channels:WhatsApp:WebhookAppSecret"] = "base-app-secret",
+                    ["OpenClaw:Channels:WhatsApp:CloudApiToken"] = "base-cloud-token",
+                    ["OpenClaw:Channels:WhatsApp:BridgeToken"] = "base-bridge-token",
+                    ["OpenClaw:Channels:WhatsApp:FirstPartyWorker:Proxy"] = "env:BASE_PROXY",
+                    ["OpenClaw:Channels:WhatsApp:FirstPartyWorker:Accounts:0:AccountId"] = "base-account",
+                    ["OpenClaw:Channels:WhatsApp:FirstPartyWorker:Accounts:0:Proxy"] = "env:ACCOUNT_PROXY"
+                })
+                .Build();
+
+            var config = GatewayBootstrapExtensions.LoadGatewayConfig(configuration);
+
+            Assert.Equal("base-verify", config.Channels.WhatsApp.WebhookVerifyToken);
+            Assert.Equal("base-app-secret", config.Channels.WhatsApp.WebhookAppSecret);
+            Assert.Equal("base-cloud-token", config.Channels.WhatsApp.CloudApiToken);
+            Assert.Equal("base-bridge-token", config.Channels.WhatsApp.BridgeToken);
+            Assert.Equal("env:BASE_PROXY", config.Channels.WhatsApp.FirstPartyWorker.Proxy);
+            Assert.Equal("env:ACCOUNT_PROXY", Assert.Single(config.Channels.WhatsApp.FirstPartyWorker.Accounts).Proxy);
+        }
+        finally
+        {
+            Directory.Delete(storagePath, recursive: true);
         }
     }
 

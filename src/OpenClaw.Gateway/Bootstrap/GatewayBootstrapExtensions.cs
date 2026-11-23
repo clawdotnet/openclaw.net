@@ -156,7 +156,17 @@ internal static class GatewayBootstrapExtensions
         if (loadPersistedSettings)
         {
             if (AdminSettingsService.TryLoadPersistedSnapshot(settingsPath, out var settings, out var settingsError) && settings is not null)
-                AdminSettingsService.ApplySnapshot(config, settings);
+            {
+                var legacyCredentialPaths = AdminSettingsService.FindLegacyInlineCredentialPaths(settings);
+                if (legacyCredentialPaths.Count > 0 && GatewaySecurity.IsLoopbackBind(config.BindAddress))
+                {
+                    Console.Error.WriteLine(
+                        "Warning: legacy admin settings contain inline credentials in: " +
+                        $"{string.Join(", ", legacyCredentialPaths)}. They remain in memory for compatibility and will be omitted on the next settings write.");
+                }
+
+                AdminSettingsService.ApplySnapshot(config, settings, preserveHiddenCredentials: true);
+            }
             else if (settingsError is not null)
                 throw new InvalidOperationException(settingsError);
         }

@@ -704,7 +704,7 @@ internal static partial class AdminEndpoints
             var bundle = new AgentBundleExportBundle
             {
                 ExportedAtUtc = DateTimeOffset.UtcNow,
-                Settings = includeSettings ? adminSettings.GetSnapshot() : null,
+                Settings = includeSettings ? AdminSettingsService.SanitizeSnapshot(adminSettings.GetSnapshot()) : null,
                 Notes = notes,
                 Profiles = profiles,
                 Proposals = proposals,

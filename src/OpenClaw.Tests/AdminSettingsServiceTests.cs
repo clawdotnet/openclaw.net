@@ -320,6 +320,93 @@ public sealed class AdminSettingsServiceTests
         }
     }
 
+    [Fact]
+    public void UpdateWhatsAppSettings_PersistsReferencesButNotInlineCredentialValues()
+    {
+        const string verifyToken = "marker-secret-verify";
+        const string appSecret = "marker-secret-app";
+        const string cloudToken = "marker-secret-cloud";
+        const string bridgeToken = "marker-secret-bridge";
+        const string proxyPassword = "marker-proxy-password";
+        var root = CreateTempDirectory();
+        try
+        {
+            var config = CreateConfig(root);
+            config.Channels.WhatsApp.WebhookVerifyToken = verifyToken;
+            config.Channels.WhatsApp.WebhookVerifyTokenRef = "env:WA_VERIFY";
+            config.Channels.WhatsApp.WebhookAppSecret = appSecret;
+            config.Channels.WhatsApp.WebhookAppSecretRef = "env:WA_APP_SECRET";
+            config.Channels.WhatsApp.CloudApiToken = cloudToken;
+            config.Channels.WhatsApp.CloudApiTokenRef = "env:WA_TOKEN";
+            config.Channels.WhatsApp.BridgeToken = bridgeToken;
+            config.Channels.WhatsApp.BridgeTokenRef = "env:WA_BRIDGE";
+            config.Channels.WhatsApp.FirstPartyWorker.Proxy = $"raw:http://user:{proxyPassword}@proxy.example.test:8080";
+            var service = CreateService(config);
+
+            var result = service.UpdateWhatsAppSettings(new WhatsAppSetupRequest
+            {
+                WebhookVerifyTokenRef = "env:WA_VERIFY",
+                WebhookAppSecretRef = "env:WA_APP_SECRET",
+                CloudApiTokenRef = "env:WA_TOKEN",
+                BridgeTokenRef = "env:WA_BRIDGE"
+            });
+
+            Assert.True(result.Success);
+            var json = File.ReadAllText(AdminSettingsService.GetSettingsPath(config));
+            Assert.DoesNotContain("marker-secret-", json, StringComparison.Ordinal);
+            Assert.DoesNotContain(proxyPassword, json, StringComparison.Ordinal);
+            Assert.DoesNotContain("raw:http://", json, StringComparison.Ordinal);
+            Assert.Contains("env:WA_TOKEN", json, StringComparison.Ordinal);
+            Assert.Equal(cloudToken, config.Channels.WhatsApp.CloudApiToken);
+            Assert.Equal($"raw:http://user:{proxyPassword}@proxy.example.test:8080", config.Channels.WhatsApp.FirstPartyWorker.Proxy);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void UpdateWhatsAppSettings_NullProxyPreservesAndEmptyProxyClearsByAccountId()
+    {
+        var root = CreateTempDirectory();
+        try
+        {
+            var config = CreateConfig(root);
+            config.Channels.WhatsApp.FirstPartyWorker.Proxy = "env:GLOBAL_PROXY";
+            config.Channels.WhatsApp.FirstPartyWorker.Accounts =
+            [
+                new WhatsAppWorkerAccountConfig { AccountId = "preserve", Proxy = "env:PRESERVED_PROXY" },
+                new WhatsAppWorkerAccountConfig { AccountId = "clear", Proxy = "env:CLEARED_PROXY" }
+            ];
+            var service = CreateService(config);
+
+            var result = service.UpdateWhatsAppSettings(new WhatsAppSetupRequest
+            {
+                Type = "first_party_worker",
+                FirstPartyWorker = new WhatsAppFirstPartyWorkerConfig
+                {
+                    Driver = "simulated",
+                    Proxy = null,
+                    Accounts =
+                    [
+                        new WhatsAppWorkerAccountConfig { AccountId = "preserve", Proxy = null },
+                        new WhatsAppWorkerAccountConfig { AccountId = "clear", Proxy = "" }
+                    ]
+                }
+            });
+
+            Assert.True(result.Success);
+            Assert.Equal("env:GLOBAL_PROXY", config.Channels.WhatsApp.FirstPartyWorker.Proxy);
+            Assert.Equal("env:PRESERVED_PROXY", config.Channels.WhatsApp.FirstPartyWorker.Accounts[0].Proxy);
+            Assert.Equal("", config.Channels.WhatsApp.FirstPartyWorker.Accounts[1].Proxy);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static AdminSettingsService CreateService(GatewayConfig config)
         => new(
             config,
