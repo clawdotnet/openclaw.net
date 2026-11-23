@@ -1,11 +1,133 @@
 using OpenClaw.Core.Models;
+using OpenClaw.Core.Security;
 using OpenClaw.Gateway.Extensions;
 using Xunit;
 
 namespace OpenClaw.Tests;
 
+[Collection(ResolverAccessorCollection.Name)]
 public sealed class GatewaySecurityHardeningTests
 {
+    [Fact]
+    public void EnforcePublicBindHardening_InlineCredential_ThrowsWithoutEchoingValue()
+    {
+        const string token = "inline-telegram-token-marker";
+        var config = CreatePublicBindSafeBaseConfig();
+        config.Channels.Telegram.BotToken = token;
+
+        var error = Assert.Throws<InvalidOperationException>(
+            () => GatewaySecurityExtensions.EnforcePublicBindHardening(config, isNonLoopbackBind: true));
+
+        Assert.Contains("OpenClaw:Channels:Telegram:BotToken", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(token, error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EnforcePublicBindHardening_SecretReferences_AreAllowed()
+    {
+        var config = CreatePublicBindSafeBaseConfig();
+        config.Llm.ApiKey = "env:MISSING_MODEL_KEY";
+        config.Channels.Telegram.BotTokenRef = "vault:secret/data/test#telegram_bot_token";
+
+        GatewaySecurityExtensions.EnforcePublicBindHardening(config, isNonLoopbackBind: true);
+    }
+
+    [Fact]
+    public void EnforcePublicBindHardening_NonSecretIdentifier_IsAllowed()
+    {
+        var config = CreatePublicBindSafeBaseConfig();
+        config.Channels.Teams.AppId = "teams-app-id";
+
+        GatewaySecurityExtensions.EnforcePublicBindHardening(config, isNonLoopbackBind: true);
+    }
+
+    [Fact]
+    public void EnforcePublicBindHardening_WhatsAppProxyUserInfo_ThrowsWithoutEchoingValue()
+    {
+        const string password = "proxy-password-marker";
+        var config = CreatePublicBindSafeBaseConfig();
+        config.Channels.WhatsApp.FirstPartyWorker.Proxy = $"http://user:{password}@proxy.example.test:8080";
+
+        var error = Assert.Throws<InvalidOperationException>(
+            () => GatewaySecurityExtensions.EnforcePublicBindHardening(config, isNonLoopbackBind: true));
+
+        Assert.Contains("Channels:WhatsApp:FirstPartyWorker:Proxy", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(password, error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EnforcePublicBindHardening_WhatsAppAccountProxyUserInfo_ThrowsWithoutEchoingValue()
+    {
+        const string password = "account-proxy-password-marker";
+        var config = CreatePublicBindSafeBaseConfig();
+        config.Channels.WhatsApp.FirstPartyWorker.Accounts.Add(new WhatsAppWorkerAccountConfig
+        {
+            AccountId = "account-a",
+            Proxy = $"http://user:{password}@proxy.example.test:8080"
+        });
+
+        var error = Assert.Throws<InvalidOperationException>(
+            () => GatewaySecurityExtensions.EnforcePublicBindHardening(config, isNonLoopbackBind: true));
+
+        Assert.Contains("Channels:WhatsApp:FirstPartyWorker:Accounts[0]:Proxy", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(password, error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EnforcePublicBindHardening_WhatsAppProxyWithoutUserInfo_IsAllowed()
+    {
+        var config = CreatePublicBindSafeBaseConfig();
+        config.Channels.WhatsApp.FirstPartyWorker.Proxy = "http://proxy.example.test:8080";
+
+        GatewaySecurityExtensions.EnforcePublicBindHardening(config, isNonLoopbackBind: true);
+    }
+
+    [Fact]
+    public void EnforcePublicBindHardening_StripeLinkEnvironment_UsesSecretNameClassifier()
+    {
+        const string apiKey = "stripe-key-marker";
+        var config = CreatePublicBindSafeBaseConfig();
+        config.Payments.StripeLink.EnvironmentVariables["STRIPE_API_KEY"] = apiKey;
+        config.Payments.StripeLink.EnvironmentVariables["STRIPE_MODE"] = "test";
+
+        var error = Assert.Throws<InvalidOperationException>(
+            () => GatewaySecurityExtensions.EnforcePublicBindHardening(config, isNonLoopbackBind: true));
+
+        Assert.Contains("STRIPE_API_KEY", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(apiKey, error.Message, StringComparison.Ordinal);
+
+        config.Payments.StripeLink.EnvironmentVariables["STRIPE_API_KEY"] = "vault:secret/data/test#stripe_api_key";
+        GatewaySecurityExtensions.EnforcePublicBindHardening(config, isNonLoopbackBind: true);
+    }
+
+    [Fact]
+    public void EnforcePublicBindHardening_VaultReferences_AreAllowedBeforePrewarm()
+    {
+        ResolverAccessor.Reset();
+        var config = CreatePublicBindSafeBaseConfig();
+        config.Channels.WhatsApp.Enabled = true;
+        config.Channels.WhatsApp.Type = "official";
+        config.Channels.WhatsApp.ValidateSignature = true;
+        config.Channels.WhatsApp.WebhookVerifyTokenRef = "vault:secret/data/test#whatsapp_verify_token";
+        config.Channels.WhatsApp.WebhookAppSecretRef = "vault:secret/data/test#whatsapp_app_secret";
+
+        GatewaySecurityExtensions.EnforcePublicBindHardening(config, isNonLoopbackBind: true);
+    }
+
+    [Fact]
+    public void EnforcePublicBindHardening_RawWhatsAppProxyReference_RequiresOptIn()
+    {
+        var config = CreatePublicBindSafeBaseConfig();
+        config.Channels.WhatsApp.FirstPartyWorker.Proxy = "raw:http://user:password@proxy.example.test:8080";
+
+        var error = Assert.Throws<InvalidOperationException>(
+            () => GatewaySecurityExtensions.EnforcePublicBindHardening(config, isNonLoopbackBind: true));
+
+        Assert.Contains("raw: secret ref", error.Message, StringComparison.OrdinalIgnoreCase);
+        config.Security.AllowRawSecretRefsOnPublicBind = true;
+        GatewaySecurityExtensions.EnforcePublicBindHardening(config, isNonLoopbackBind: true);
+    }
+
     [Fact]
     public void EnforcePublicBindHardening_WhatsAppOfficialWithoutSignatureValidation_Throws()
     {

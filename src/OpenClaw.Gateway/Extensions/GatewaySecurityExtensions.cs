@@ -3,6 +3,7 @@ using System.Text.Json;
 using OpenClaw.Core.Models;
 using OpenClaw.Core.Security;
 using OpenClaw.Gateway;
+using OpenClaw.Payments.Core;
 
 namespace OpenClaw.Gateway.Extensions;
 
@@ -72,9 +73,7 @@ public static class GatewaySecurityExtensions
                         "Set OpenClaw:Channels:WhatsApp:ValidateSignature=true and configure WebhookAppSecretRef.");
                 }
 
-                var appSecret = SecretResolver.Resolve(config.Channels.WhatsApp.WebhookAppSecretRef)
-                    ?? config.Channels.WhatsApp.WebhookAppSecret;
-                if (string.IsNullOrWhiteSpace(appSecret))
+                if (!HasConfiguredSecret(config.Channels.WhatsApp.WebhookAppSecretRef, config.Channels.WhatsApp.WebhookAppSecret))
                 {
                     throw new InvalidOperationException(
                         "Refusing to start with WhatsApp official webhooks on a non-loopback bind without a webhook app secret. " +
@@ -83,9 +82,7 @@ public static class GatewaySecurityExtensions
             }
             else if (string.Equals(config.Channels.WhatsApp.Type, "bridge", StringComparison.OrdinalIgnoreCase))
             {
-                var bridgeToken = SecretResolver.Resolve(config.Channels.WhatsApp.BridgeTokenRef)
-                    ?? config.Channels.WhatsApp.BridgeToken;
-                if (string.IsNullOrWhiteSpace(bridgeToken))
+                if (!HasConfiguredSecret(config.Channels.WhatsApp.BridgeTokenRef, config.Channels.WhatsApp.BridgeToken))
                 {
                     throw new InvalidOperationException(
                         "Refusing to start with WhatsApp bridge webhooks on a non-loopback bind without inbound authentication. " +
@@ -117,7 +114,7 @@ public static class GatewaySecurityExtensions
                     "Set OpenClaw:Channels:Sms:Twilio:WebhookPublicBaseUrl so signatures can be verified.");
             }
 
-            if (string.IsNullOrWhiteSpace(SecretResolver.Resolve(config.Channels.Sms.Twilio.AuthTokenRef)))
+            if (!HasConfiguredSecret(config.Channels.Sms.Twilio.AuthTokenRef))
             {
                 throw new InvalidOperationException(
                     "Refusing to start with Twilio SMS webhooks on a non-loopback bind without AuthTokenRef. " +
@@ -134,9 +131,7 @@ public static class GatewaySecurityExtensions
                     "Set OpenClaw:Channels:Telegram:ValidateSignature=true.");
             }
 
-            var secretToken = SecretResolver.Resolve(config.Channels.Telegram.WebhookSecretTokenRef)
-                ?? config.Channels.Telegram.WebhookSecretToken;
-            if (string.IsNullOrWhiteSpace(secretToken))
+            if (!HasConfiguredSecret(config.Channels.Telegram.WebhookSecretTokenRef, config.Channels.Telegram.WebhookSecretToken))
             {
                 throw new InvalidOperationException(
                     "Refusing to start with Telegram webhooks on a non-loopback bind without a webhook secret token. " +
@@ -153,12 +148,9 @@ public static class GatewaySecurityExtensions
                     "Set OpenClaw:Channels:Teams:ValidateToken=true.");
             }
 
-            var appId = SecretResolver.Resolve(config.Channels.Teams.AppIdRef) ?? config.Channels.Teams.AppId;
-            var appPassword = SecretResolver.Resolve(config.Channels.Teams.AppPasswordRef) ?? config.Channels.Teams.AppPassword;
-            var tenantId = SecretResolver.Resolve(config.Channels.Teams.TenantIdRef) ?? config.Channels.Teams.TenantId;
-            if (string.IsNullOrWhiteSpace(appId) ||
-                string.IsNullOrWhiteSpace(appPassword) ||
-                string.IsNullOrWhiteSpace(tenantId))
+            if (!HasConfiguredSecret(config.Channels.Teams.AppIdRef, config.Channels.Teams.AppId) ||
+                !HasConfiguredSecret(config.Channels.Teams.AppPasswordRef, config.Channels.Teams.AppPassword) ||
+                !HasConfiguredSecret(config.Channels.Teams.TenantIdRef, config.Channels.Teams.TenantId))
             {
                 throw new InvalidOperationException(
                     "Refusing to start with Teams inbound webhooks on a non-loopback bind without full token-validation credentials. " +
@@ -175,8 +167,7 @@ public static class GatewaySecurityExtensions
                     "Set OpenClaw:Channels:Slack:ValidateSignature=true.");
             }
 
-            var signingSecret = SecretResolver.Resolve(config.Channels.Slack.SigningSecretRef) ?? config.Channels.Slack.SigningSecret;
-            if (string.IsNullOrWhiteSpace(signingSecret))
+            if (!HasConfiguredSecret(config.Channels.Slack.SigningSecretRef, config.Channels.Slack.SigningSecret))
             {
                 throw new InvalidOperationException(
                     "Refusing to start with Slack webhooks on a non-loopback bind without a signing secret. " +
@@ -193,13 +184,22 @@ public static class GatewaySecurityExtensions
                     "Set OpenClaw:Channels:Discord:ValidateSignature=true.");
             }
 
-            var publicKey = SecretResolver.Resolve(config.Channels.Discord.PublicKeyRef) ?? config.Channels.Discord.PublicKey;
-            if (string.IsNullOrWhiteSpace(publicKey))
+            if (!HasConfiguredSecret(config.Channels.Discord.PublicKeyRef, config.Channels.Discord.PublicKey))
             {
                 throw new InvalidOperationException(
                     "Refusing to start with Discord interactions on a non-loopback bind without a public key. " +
                     "Set OpenClaw:Channels:Discord:PublicKeyRef or PublicKey.");
             }
+        }
+
+        var inlineCredentialPaths = FindInlineCredentialPaths(config);
+        if (inlineCredentialPaths.Count > 0)
+        {
+            var sample = string.Join(", ", inlineCredentialPaths.Take(3));
+            var suffix = inlineCredentialPaths.Count > 3 ? ", ..." : "";
+            throw new InvalidOperationException(
+                "Refusing to start with inline credential values on a non-loopback bind. " +
+                $"Detected in: {sample}{suffix}. Use env: or vault: references.");
         }
 
         if (!config.Security.AllowRawSecretRefsOnPublicBind)
@@ -240,7 +240,80 @@ public static class GatewaySecurityExtensions
         var hits = new List<string>(capacity: 8);
         var json = JsonSerializer.SerializeToElement(root, CoreJsonContext.Default.GatewayConfig);
         VisitForRawRefs(json, "OpenClaw", hits);
+        foreach (var (name, value) in root.Payments.StripeLink.EnvironmentVariables)
+        {
+            if (hits.Count >= 8)
+                break;
+
+            if (StripeLinkSecretEnvironmentName.IsSensitive(name) && SecretResolver.IsRawRef(value))
+                hits.Add($"OpenClaw:Payments:StripeLink:EnvironmentVariables:{name}");
+        }
+
         return hits;
+    }
+
+    private static IReadOnlyList<string> FindInlineCredentialPaths(GatewayConfig root)
+    {
+        var hits = new List<string>(capacity: 8);
+        var json = JsonSerializer.SerializeToElement(root, CoreJsonContext.Default.GatewayConfig);
+        VisitForInlineCredentials(json, "OpenClaw", hits);
+        foreach (var (name, value) in root.Payments.StripeLink.EnvironmentVariables)
+        {
+            if (hits.Count >= 8)
+                break;
+
+            if (StripeLinkSecretEnvironmentName.IsSensitive(name) && IsInlineCredentialValue(value))
+                hits.Add($"OpenClaw:Payments:StripeLink:EnvironmentVariables:{name}");
+        }
+
+        if ((!root.Channels.WhatsApp.Enabled ||
+             !string.IsNullOrWhiteSpace(root.Channels.WhatsApp.WebhookVerifyTokenRef)) &&
+            string.Equals(root.Channels.WhatsApp.WebhookVerifyToken, "openclaw-verify", StringComparison.Ordinal))
+        {
+            hits.RemoveAll(path => string.Equals(
+                path,
+                "OpenClaw:Channels:WhatsApp:WebhookVerifyToken",
+                StringComparison.OrdinalIgnoreCase));
+        }
+
+        return hits;
+    }
+
+    private static void VisitForInlineCredentials(JsonElement value, string path, List<string> hits)
+    {
+        if (hits.Count >= 8)
+            return;
+
+        switch (value.ValueKind)
+        {
+            case JsonValueKind.String:
+                var text = value.GetString();
+                if (IsInlineCredentialValue(text) &&
+                    (IsWhatsAppProxyPath(path) ? HasProxyUriUserInfo(text) : LooksLikeCredentialPath(path)))
+                {
+                    hits.Add(FormatCredentialPath(path));
+                }
+                return;
+
+            case JsonValueKind.Object:
+                foreach (var prop in value.EnumerateObject())
+                {
+                    VisitForInlineCredentials(prop.Value, $"{path}:{prop.Name}", hits);
+                    if (hits.Count >= 8)
+                        return;
+                }
+                return;
+
+            case JsonValueKind.Array:
+                var idx = 0;
+                foreach (var item in value.EnumerateArray())
+                {
+                    VisitForInlineCredentials(item, $"{path}[{idx++}]", hits);
+                    if (hits.Count >= 8)
+                        return;
+                }
+                return;
+        }
     }
 
     private static void VisitForRawRefs(JsonElement value, string path, List<string> hits)
@@ -252,8 +325,10 @@ public static class GatewaySecurityExtensions
         {
             case JsonValueKind.String:
                 var s = value.GetString();
-                if (!string.IsNullOrWhiteSpace(s) && SecretResolver.IsRawRef(s) && LooksLikeSecretPath(path))
-                    hits.Add(path);
+                if (!string.IsNullOrWhiteSpace(s) &&
+                    SecretResolver.IsRawRef(s) &&
+                    (LooksLikeCredentialPath(path) || IsWhatsAppProxyPath(path)))
+                    hits.Add(FormatCredentialPath(path));
                 return;
 
             case JsonValueKind.Object:
@@ -282,13 +357,62 @@ public static class GatewaySecurityExtensions
         }
     }
 
-    private static bool LooksLikeSecretPath(string path)
+    internal static bool HasProxyUriUserInfo(string? value)
+        => Uri.TryCreate(value, UriKind.Absolute, out var uri) && !string.IsNullOrEmpty(uri.UserInfo);
+
+    private static bool IsWhatsAppProxyPath(string path)
+        => path.EndsWith(":Channels:WhatsApp:FirstPartyWorker:Proxy", StringComparison.OrdinalIgnoreCase)
+            || (path.Contains(":Channels:WhatsApp:FirstPartyWorker:Accounts[", StringComparison.OrdinalIgnoreCase)
+                && path.EndsWith(":Proxy", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsInlineCredentialValue(string? value)
+        => !string.IsNullOrWhiteSpace(value)
+            && !value.StartsWith("env:", StringComparison.OrdinalIgnoreCase)
+            && !value.StartsWith("vault:", StringComparison.OrdinalIgnoreCase)
+            && !value.StartsWith("raw:", StringComparison.OrdinalIgnoreCase);
+
+    private static bool LooksLikeCredentialPath(string path)
     {
-        return path.Contains("Ref", StringComparison.OrdinalIgnoreCase) ||
-               path.Contains("Secret", StringComparison.OrdinalIgnoreCase) ||
-               path.Contains("Token", StringComparison.OrdinalIgnoreCase) ||
-               path.Contains("Password", StringComparison.OrdinalIgnoreCase) ||
-               path.Contains("ApiKey", StringComparison.OrdinalIgnoreCase);
+        if (path.EndsWith(":Pulse:AckToken", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var separator = path.LastIndexOf(':');
+        var propertyName = separator >= 0 ? path[(separator + 1)..] : path;
+        if (propertyName.Equals("CredentialsPath", StringComparison.OrdinalIgnoreCase) ||
+            propertyName.Equals("CredentialsPathRef", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return propertyName.Contains("ApiKey", StringComparison.OrdinalIgnoreCase)
+            || propertyName.Contains("Secret", StringComparison.OrdinalIgnoreCase)
+            || propertyName.Contains("Token", StringComparison.OrdinalIgnoreCase)
+            || propertyName.Contains("Password", StringComparison.OrdinalIgnoreCase)
+            || propertyName.Contains("Credential", StringComparison.OrdinalIgnoreCase)
+            || propertyName.Equals("ConnectionString", StringComparison.OrdinalIgnoreCase)
+            || propertyName.Equals("SigningKey", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(":Channels:DingTalk:AppKey", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(":Channels:DingTalk:AppKeyRef", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string FormatCredentialPath(string path)
+    {
+        var segments = path.Split(':');
+        for (var index = 1; index < segments.Length; index++)
+        {
+            if (segments[index].Length > 0)
+                segments[index] = char.ToUpperInvariant(segments[index][0]) + segments[index][1..];
+        }
+
+        return string.Join(':', segments);
+    }
+
+    private static bool HasConfiguredSecret(string? secretRef, string? legacyValue = null)
+    {
+        if (secretRef?.StartsWith("vault:", StringComparison.OrdinalIgnoreCase) == true)
+            return true;
+
+        return !string.IsNullOrWhiteSpace(SecretResolver.Resolve(secretRef) ?? legacyValue);
     }
 
     private static bool TryResolveExecutionBackend(GatewayConfig config, string toolName, out string? backendName)
