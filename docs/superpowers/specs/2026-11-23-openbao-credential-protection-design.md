@@ -6,7 +6,7 @@ Revised for specification review. This design covers JIT Gateway deployments; th
 
 ## Context
 
-OpenClaw.NET already has a central `SecretResolver` and an optional OpenBao/Vault KV v2 provider. Existing consumers can resolve `vault:` references, and the gateway pre-warms configured references before serving. However, this support is not universal: a configured field is protected only when its consumer uses the resolver. In particular, the gateway-wide `AuthToken` currently comes from configuration or `OPENCLAW_AUTH_TOKEN` without resolver integration.
+OpenClaw.NET already has a central `SecretResolver` and an optional OpenBao/Vault KV v2 provider. Existing consumers can resolve `vault:` references, and the gateway pre-warms configured references before serving. However, this support is not universal: a configured field is protected only when its consumer uses the resolver. In particular, the gateway-wide `AuthToken` currently comes from configuration or `OPENCLAW_AUTH_TOKEN` without resolver integration. WhatsApp first-party worker proxy URLs can also carry username/password credentials in URI userinfo, and the setup endpoint currently returns the worker configuration.
 
 The goal is to protect long-lived, reusable service credentials consistently without turning OpenBao into a general configuration store or redesigning every credential consumer.
 
@@ -39,6 +39,7 @@ The credential inventory is maintained in `docs/security/vault.md` as a field-le
 | P1 | Tool and integration credentials, including database connection strings, Home Assistant, Notion, email, MQTT, and Nacos | Use the existing resolver where present; add resolver calls only for credential fields currently consumed as literals. |
 | P1 | Workflow backend tokens, OAuth client secrets, MCP delegated client secrets/signing keys, and generic webhook HMAC secrets | Keep references in configuration and resolve only at the consuming boundary. |
 | P1 | Long-lived payment-provider credentials passed to CLI integrations | Classify secret-bearing entries in `Payments.StripeLink.EnvironmentVariables` and resolve them before process launch; do not confuse these with transient payment transaction secrets. |
+| P1 | WhatsApp first-party worker proxy credentials in `Channels.WhatsApp.FirstPartyWorker.Proxy` and `Channels.WhatsApp.FirstPartyWorker.Accounts[].Proxy` | Accept `env:`/`vault:` references for the complete proxy URL and resolve them immediately before sending worker configuration. Treat URI userinfo as an inline credential for public-bind validation and admin redaction. |
 | P2 | Coding backend and connected-account credentials | Support existing `SecretRef` references. Token-file and protected-blob modes remain valid; no OAuth refresh lifecycle is added. |
 
 Identifiers such as application IDs, tenant IDs, resource URLs, scopes, and allowlists are not secrets by default. They remain ordinary configuration unless a specific deployment policy classifies them otherwise.
@@ -52,6 +53,8 @@ The active Gmail Pub/Sub webhook secret already uses a resolver-backed reference
 3. The provider chain resolves `env:` and `vault:` references. OpenBao reads KV v2 values and uses the existing TTL cache and refresh-ahead behavior.
 4. Gateway startup pre-warms configured `vault:` references before serving. Production deployments keep `PrewarmRequired=true`.
 5. Consumers that capture credentials at construction may require service or gateway recreation before a rotation takes effect.
+
+For WhatsApp first-party worker `Proxy` fields, the full proxy URL may be configured as an `env:` or `vault:` reference. Resolve a copied worker configuration immediately before serializing it to the bridge worker; do not replace the reference in the gateway's persisted or admin-facing configuration.
 
 No separate credential API is introduced. Existing settings with a dedicated `*Ref` property use that property. `AuthToken` receives an explicit `AuthTokenRef`; precedence is:
 
@@ -84,6 +87,7 @@ Use stable lowercase service and key names. Do not put secret values, email addr
 ## Public-bind and plaintext policy
 
 - Public-bind deployments reject inline plaintext values in fields classified as credentials. The error identifies the configuration field but never includes its value.
+- An absolute proxy URI with non-empty `Uri.UserInfo` is credential-bearing. Public binds reject such inline values in WhatsApp worker and account `Proxy` fields; `env:`/`vault:` references are not parsed as URIs, and unauthenticated proxy URLs remain ordinary configuration.
 - `env:` and `vault:` references remain allowed.
 - The existing `Security.AllowRawSecretRefsOnPublicBind` remains an explicit compatibility escape hatch for `raw:` references; it stays disabled by default and enabling it produces a clear security warning.
 - Local/non-public deployments retain legacy literal-value behavior during migration.
@@ -102,16 +106,16 @@ This is an intentional public-bind compatibility change and must be called out i
 
 ## Legacy admin-settings snapshots
 
-`AdminSettingsSnapshot` currently carries some WhatsApp credential values, and an admin update can serialize that snapshot to `admin-settings.json`. New writes must omit inline credential values and preserve their `*Ref` settings. Keep the existing in-memory values for the running process, but do not copy them into the persisted snapshot; after restart, a credential that was only present as a legacy persisted literal will no longer be available.
+`AdminSettingsSnapshot` currently carries some WhatsApp credential values, and an admin update can serialize that snapshot to `admin-settings.json`. New writes must omit inline credential values and proxy URLs with URI userinfo, while preserving their `*Ref` settings and reference-valued proxy fields. Keep the existing in-memory values for the running process, but do not copy them into the persisted snapshot; after restart, a credential that was only present as a legacy persisted literal will no longer be available.
 
 For local/non-public deployments, continue loading existing legacy snapshot values during migration and emit a warning containing field names only. Do not silently claim those values are OpenBao-protected. Operators must move them to `env:`/`vault:` references before relying on them across a restart. Public-bind validation rejects inline credentials even when loaded from an old snapshot.
 
-Admin settings responses, support bundles, and other exports must use a sanitized projection rather than serializing the credential-bearing runtime snapshot. Preserve the existing config API's configured/not-configured behavior while ensuring update responses cannot return secret values.
+Admin settings responses, support bundles, and other exports must use a sanitized projection rather than serializing the credential-bearing runtime snapshot. For the WhatsApp setup response, never return a proxy URL containing URI userinfo; return reference-valued proxy fields and configured-state metadata for redacted legacy values. In setup updates, a null proxy field preserves the existing value during migration, while an empty string explicitly clears it. Preserve the existing config API's configured/not-configured behavior while ensuring update responses cannot return secret values.
 
 ## Migration and rollout
 
 1. **Inventory:** Produce and maintain the field-level credential coverage matrix in `docs/security/vault.md`. Identify fields that already use `SecretResolver` and fields still consumed as literal values, including secret-bearing Stripe Link process environment entries.
-2. **Close gaps:** Add `AuthTokenRef`, then route only confirmed credential fields through the resolver, including classified Stripe Link credentials. Preserve direct-value behavior for local deployments.
+2. **Close gaps:** Add `AuthTokenRef`, then route only confirmed credential fields through the resolver, including classified Stripe Link credentials and WhatsApp worker proxy references. Preserve local legacy proxy behavior during migration.
 3. **Protect persistence and APIs:** Preserve in-memory legacy values while excluding credential literals from new admin-settings writes. Sanitize settings responses, support bundles, and exports; warn when loading legacy local values.
 4. **Pilot:** Configure HTTPS OpenBao, an externally supplied least-privilege token, KV paths, and required pre-warm in a non-public JIT environment. Validate every referenced secret before production rollout.
 5. **Migrate and rotate:** Replace production inline credentials with `vault:` references, verify startup and dependent integrations, then rotate/revoke the old credentials. Account for cache TTL and clients that capture values at construction.
@@ -121,10 +125,13 @@ Admin settings responses, support bundles, and other exports must use a sanitize
 
 - Existing `env:` references and local direct-value configurations continue to work as documented.
 - `AuthTokenRef` resolves through `SecretResolver`; an invalid configured reference fails closed and never falls back.
+- WhatsApp first-party worker proxy references resolve through `SecretResolver` immediately before worker configuration is sent; failures are explicit and never fall back to inline values.
 - Missing, disabled, unauthorized, and unresolved Vault references produce explicit startup or resolution failures without exposing secret values.
 - Required pre-warm blocks serving when any configured required reference cannot be fetched.
 - Public-bind validation rejects direct credential literals, accepts `env:` and `vault:` references, and reports only the field path. The explicit `raw:` override retains its documented warning behavior.
 - Administrative settings round-trip references and do not return resolved values.
+- Public-bind validation rejects WhatsApp worker proxy URLs containing inline URI userinfo; admin responses and persisted snapshots do not expose those userinfo values, while local legacy runtime behavior is preserved.
+- WhatsApp setup updates preserve a redacted legacy proxy value when the field is null and clear it only when the field is explicitly an empty string.
 - Legacy local `admin-settings.json` credentials load with a field-only warning, remain available in the current process, and are not copied into a new snapshot; public-bind startup rejects those literals.
 - Admin settings updates, support bundles, and exports do not include inline credential values.
 - Tests cover secret redaction across API responses, diagnostics, logs, and exceptions.
@@ -136,5 +143,6 @@ Admin settings responses, support bundles, and other exports must use a sanitize
 - Architecture: incrementally extend existing `SecretResolver`.
 - NativeAOT: OpenBao is JIT-only for this design.
 - Connected-account OAuth: permit references to externally managed secrets; do not design token issuance/refresh/ownership.
+- WhatsApp worker proxy: reuse the existing `Proxy` properties for `env:`/`vault:` references, resolve on the worker boundary, reject inline URI userinfo on public binds, and redact legacy values from persistence and admin responses.
 - Public bind: reject inline credential values; retain the existing explicit `raw:` compatibility override.
 - Legacy admin snapshots: preserve local loading with a field-only warning; omit inline values on new writes and require `env:`/`vault:` migration for persistence.
