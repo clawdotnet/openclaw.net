@@ -15,6 +15,7 @@ public sealed partial class GatewayAdminEndpointTests
     {
         await using var harness = await CreateHarnessAsync(true, config =>
         {
+            config.Llm.ApiKey = "env:TEST_MODEL_KEY";
             config.Canvas.Enabled = false;
             config.Tooling.AllowShell = false;
             config.Tooling.AllowedReadRoots = [config.Memory.StoragePath];
@@ -46,6 +47,7 @@ public sealed partial class GatewayAdminEndpointTests
     {
         await using var harness = await CreateHarnessAsync(true, config =>
         {
+            config.Llm.ApiKey = "env:TEST_MODEL_KEY";
             config.Canvas.Enabled = false;
             config.Tooling.AllowShell = false;
             config.Tooling.AllowedReadRoots = [config.Memory.StoragePath];
