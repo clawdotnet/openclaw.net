@@ -165,6 +165,6 @@ OPENBAO_ADDR=http://127.0.0.1:8200 OPENBAO_TOKEN=root \
 - **回滚**：设 `Enabled=false`；`vault:` 引用故障关闭（抛 `VaultNotConfiguredException`），`env:`/`raw:` 行为不变。
 - **轮换**：在 Vault 中轮换 value；缓存经 `CacheTtl` 过期后后台刷新（refresh-ahead），无需重启网关即可生效。
 
-Vault pre-warming runs before runtime initialization. The hosted service refreshes configured references every half cache TTL for synchronous consumers. Stale values are available for at most twice the TTL from the last successful fetch; failures do not extend that deadline. Existing clients that capture credentials at construction still require recreation to use a rotated value.
+Vault 预热会在运行时初始化之前执行。托管服务会每隔半个缓存 TTL 刷新一次已配置的引用，供同步使用者使用。上次成功获取的值最多可在两个 TTL 的时间内作为过期值提供；失败不会延长此期限。构造时已捕获凭据的现有客户端仍需重新创建，才能使用轮换后的值。
 
-Vault is available in JIT publishes (`-p:PublishAot=false`). NativeAOT publishes exclude the integration and reject `vault:` references.
+JIT 发布版本可使用 Vault（`-p:PublishAot=false`）。NativeAOT 发布版本不包含此集成，并会拒绝 `vault:` 引用。
