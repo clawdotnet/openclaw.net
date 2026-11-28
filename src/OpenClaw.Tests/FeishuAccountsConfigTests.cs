@@ -265,4 +265,91 @@ public sealed class FeishuAccountsConfigTests
         Assert.Equal("cli_initial", multi.GetEffectiveConfig().AppId);
         Assert.True(multi.GetEffectiveConfig().Accounts.ContainsKey("default"));
     }
+
+    /// <summary>Whitespace in Accounts keys should still resolve credentials and policy.</summary>
+    [Fact]
+    public void Project_WhenAccountKeyHasWhitespace_ShouldFindEntry()
+    {
+        var root = new FeishuChannelConfig
+        {
+            Enabled = true,
+            RequireMentionInGroup = true,
+            Accounts =
+            {
+                [" bot-a "] = new FeishuChannelConfig
+                {
+                    AppId = "cli_a",
+                    AppSecret = "sec_a",
+                    RequireMentionInGroup = false
+                }
+            }
+        };
+
+        Assert.Equal(["bot-a"], FeishuAccountProjection.ListAccountIds(root));
+        var projected = FeishuAccountProjection.Project(root, "bot-a");
+        Assert.True(projected.Enabled);
+        Assert.Equal("cli_a", projected.AppId);
+        Assert.False(projected.RequireMentionInGroup);
+    }
+
+    /// <summary>Policy-only account entries stay enabled for env-backed credentials.</summary>
+    [Fact]
+    public void Project_WhenPolicyOnlyAccount_ShouldStayEnabled()
+    {
+        var root = new FeishuChannelConfig
+        {
+            Enabled = true,
+            Accounts =
+            {
+                ["env-bot"] = new FeishuChannelConfig
+                {
+                    RequireMentionInGroup = true
+                }
+            }
+        };
+
+        var projected = FeishuAccountProjection.Project(root, "env-bot");
+        Assert.True(projected.Enabled);
+        Assert.True(projected.RequireMentionInGroup);
+        Assert.Equal("env:FEISHU_APP_ID_env-bot", projected.AppIdRef);
+    }
+
+    /// <summary>Explicit false on an account overrides root RequireMentionInGroup=true.</summary>
+    [Fact]
+    public void Project_WhenAccountSetsRequireMentionFalse_ShouldOverrideRoot()
+    {
+        var root = new FeishuChannelConfig
+        {
+            Enabled = true,
+            RequireMentionInGroup = true,
+            Accounts =
+            {
+                ["bot-a"] = new FeishuChannelConfig
+                {
+                    AppId = "cli_a",
+                    AppSecret = "sec_a",
+                    RequireMentionInGroup = false
+                }
+            }
+        };
+
+        var projected = FeishuAccountProjection.Project(root, "bot-a");
+        Assert.False(projected.RequireMentionInGroup);
+    }
+
+    /// <summary>Trimmed-key collisions in Accounts should throw.</summary>
+    [Fact]
+    public void ListAccountIds_WhenTrimmedKeysCollide_ShouldThrow()
+    {
+        var root = new FeishuChannelConfig
+        {
+            Accounts =
+            {
+                ["bot"] = new FeishuChannelConfig(),
+                [" bot "] = new FeishuChannelConfig()
+            }
+        };
+
+        Assert.Throws<InvalidOperationException>(() => FeishuAccountProjection.ListAccountIds(root));
+    }
 }

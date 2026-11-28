@@ -58,7 +58,9 @@ public static class FeishuAccountCredentialRefs
                 root.AppSecretRef);
         }
 
-        root.Accounts.TryGetValue(key, out var fromMap);
+        FeishuChannelConfig? fromMap = null;
+        if (accountEntry is null)
+            FeishuAccountProjection.TryGetAccountEntry(root, key, out fromMap);
         var entry = accountEntry ?? fromMap;
         if (entry is null)
         {

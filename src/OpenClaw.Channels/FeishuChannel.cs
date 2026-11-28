@@ -74,8 +74,10 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
         await _rebuildLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            await DisposeChildrenAsync().ConfigureAwait(false);
-            await RebuildAndStartChildrenAsync(_appLifetime.CanBeCanceled ? _appLifetime : ct).ConfigureAwait(false);
+            // Always rebuild under the StartAsync lifetime — never the admin request token.
+            var previous = _children;
+            await RebuildAndStartChildrenAsync(_appLifetime).ConfigureAwait(false);
+            await DisposeClientsAsync(previous).ConfigureAwait(false);
             _logger.LogInformation(
                 "Feishu multi-account channel restarted with {Count} client(s).",
                 _children.Count);
@@ -111,10 +113,16 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
-        await DisposeChildrenAsync().ConfigureAwait(false);
+        var snapshot = _children;
+        _children = new Dictionary<string, FeishuClient>(StringComparer.OrdinalIgnoreCase);
+        await DisposeClientsAsync(snapshot).ConfigureAwait(false);
         _rebuildLock.Dispose();
     }
 
+    /// <summary>
+    /// Builds and starts the next generation, then publishes it in one assignment
+    /// so SendAsync never observes an empty routing table mid-rebuild.
+    /// </summary>
     private async Task RebuildAndStartChildrenAsync(CancellationToken ct)
     {
         var root = GetEffectiveConfig();
@@ -132,13 +140,13 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
             next[accountId] = child;
         }
 
-        _children = next;
-
-        foreach (var (accountId, child) in _children)
+        foreach (var (accountId, child) in next)
         {
             _logger.LogInformation("Starting Feishu client account '{AccountId}'.", accountId);
             await child.StartAsync(ct).ConfigureAwait(false);
         }
+
+        _children = next;
     }
 
     private async ValueTask ForwardInboundAsync(InboundMessage message, CancellationToken ct)
@@ -148,12 +156,9 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
             await handler(message, ct).ConfigureAwait(false);
     }
 
-    private async Task DisposeChildrenAsync()
+    private async Task DisposeClientsAsync(Dictionary<string, FeishuClient> clients)
     {
-        var snapshot = _children;
-        _children = new Dictionary<string, FeishuClient>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var child in snapshot.Values)
+        foreach (var child in clients.Values)
         {
             try
             {
@@ -668,12 +673,13 @@ public sealed class FeishuClient : IChannelAdapter, IRestartableChannelAdapter
         // Group policy check
         if (isGroup)
         {
-            if (string.Equals(cfg.GroupPolicy, "disabled", StringComparison.OrdinalIgnoreCase))
+            var groupPolicy = FeishuAccountProjection.EffectiveGroupPolicy(cfg.GroupPolicy);
+            if (string.Equals(groupPolicy, "disabled", StringComparison.OrdinalIgnoreCase))
             {
                 _logger.LogDebug("Feishu group message dropped (GroupPolicy=disabled).");
                 return;
             }
-            if (string.Equals(cfg.GroupPolicy, "allowlist", StringComparison.OrdinalIgnoreCase) &&
+            if (string.Equals(groupPolicy, "allowlist", StringComparison.OrdinalIgnoreCase) &&
                 !IsGroupAllowed(chatId, cfg))
             {
                 _logger.LogDebug("Feishu message from non-allowlisted group {GroupId} dropped.", chatId);
@@ -707,7 +713,7 @@ public sealed class FeishuClient : IChannelAdapter, IRestartableChannelAdapter
         // @mention gate: when RequireMentionInGroup is enabled, only process messages that
         // explicitly @mention this bot. This prevents responding to every group message when
         // multiple bots coexist in the same group.
-        if (isGroup && cfg.RequireMentionInGroup)
+        if (isGroup && cfg.RequireMentionInGroup == true)
         {
             if (string.IsNullOrEmpty(_botOpenId))
             {
@@ -726,7 +732,7 @@ public sealed class FeishuClient : IChannelAdapter, IRestartableChannelAdapter
 
         // Parse message content
         var (text, mediaType, mediaUrl, mediaFileName) =
-            ParseMessageContent(msgType, contentJson, msgId, cfg.ExposeInboundMediaUrls);
+            ParseMessageContent(msgType, contentJson, msgId, cfg.ExposeInboundMediaUrls != false);
 
         if (string.IsNullOrWhiteSpace(text) && mediaType is null)
             return;
@@ -766,8 +772,9 @@ public sealed class FeishuClient : IChannelAdapter, IRestartableChannelAdapter
                 text = string.IsNullOrWhiteSpace(text) ? parentMarker : $"{text}\n{parentMarker}";
         }
 
-        if (!string.IsNullOrWhiteSpace(text) && text.Length > cfg.MaxInboundChars)
-            text = text[..cfg.MaxInboundChars];
+        var maxInboundChars = cfg.MaxInboundChars ?? 4096;
+        if (!string.IsNullOrWhiteSpace(text) && text.Length > maxInboundChars)
+            text = text[..maxInboundChars];
 
         var inbound = new InboundMessage
         {

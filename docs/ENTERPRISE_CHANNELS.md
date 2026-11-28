@@ -57,7 +57,9 @@ Feishu supports the official account map. `ChannelId` remains `feishu`; inbound/
 ```
 
 - `"default": {}` reuses the root AppId/AppSecret/refs.
-- Other keys default to `env:FEISHU_APP_ID_{key}` / `env:FEISHU_APP_SECRET_{key}` (key kept as-is, including hyphens).
+- Other keys default to `env:FEISHU_APP_ID_{key}` / `env:FEISHU_APP_SECRET_{key}` (key kept as-is, including hyphens; surrounding whitespace is trimmed).
+- Omitted account fields inherit the root; explicit values override (including `false` / `"open"`).
+- Policy-only account entries (for example `RequireMentionInGroup`) stay enabled and use keyed env refs.
 - An empty `Accounts` map starts only `default` (single-bot root config).
 - Runtime composition uses `FeishuChannel` as a multi-account facade over N× `FeishuClient`.
 

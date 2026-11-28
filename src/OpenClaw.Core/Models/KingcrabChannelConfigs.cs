@@ -26,8 +26,11 @@ public sealed class FeishuChannelConfig
     /// <summary>Secret reference for App Secret (e.g. "env:FEISHU_APP_SECRET").</summary>
     public string AppSecretRef { get; set; } = "env:FEISHU_APP_SECRET";
 
-    /// <summary>Group chat policy: "open" allows all groups, "allowlist" restricts to AllowedGroupIds, "disabled" drops group messages.</summary>
-    public string GroupPolicy { get; set; } = "open"; // open, allowlist, disabled
+    /// <summary>
+    /// Group chat policy: "open" / "allowlist" / "disabled".
+    /// Null/omitted on an <c>Accounts</c> entry inherits the root; null on the root means <c>open</c>.
+    /// </summary>
+    public string? GroupPolicy { get; set; }
 
     /// <summary>Allowed sender open_ids. Empty = allow all (subject to DmPolicy/GroupPolicy).</summary>
     public string[] AllowedFromUserIds { get; set; } = [];
@@ -35,20 +38,23 @@ public sealed class FeishuChannelConfig
     /// <summary>Allowed group chat_ids (oc_xxx). Only used when GroupPolicy is "allowlist".</summary>
     public string[] AllowedGroupIds { get; set; } = [];
 
-    public int MaxInboundChars { get; set; } = 4096;
+    /// <summary>
+    /// Max inbound text length. Null/omitted on an <c>Accounts</c> entry inherits the root;
+    /// null on the root means 4096.
+    /// </summary>
+    public int? MaxInboundChars { get; set; }
 
     /// <summary>
     /// When true, the bot only responds to group messages where it is explicitly @mentioned.
-    /// Recommended when multiple bots share the same group.
-    /// Default is false (respond to all group messages allowed by GroupPolicy).
+    /// Null/omitted on an <c>Accounts</c> entry inherits the root; null on the root means false.
     /// </summary>
-    public bool RequireMentionInGroup { get; set; } = false;
+    public bool? RequireMentionInGroup { get; set; }
 
     /// <summary>
     /// When true, inbound media file keys are included as feishu-resource:// URLs in MediaUrl.
-    /// The pipeline can pass these to tools that understand the scheme.
+    /// Null/omitted on an <c>Accounts</c> entry inherits the root; null on the root means true.
     /// </summary>
-    public bool ExposeInboundMediaUrls { get; set; } = true;
+    public bool? ExposeInboundMediaUrls { get; set; }
 
     /// <summary>
     /// Multi-bot account map (aligned with official <c>channels.feishu.accounts</c>; key = AccountId).
