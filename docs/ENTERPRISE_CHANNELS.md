@@ -25,7 +25,10 @@ All enterprise channels share the same operator model: DM policy, allowlists, an
       "AppId": "<your-feishu-app-id>",
       "AppSecret": "<your-feishu-app-secret>",
       "VerificationToken": "<verification-token>",
-      "EncryptKey": "<encrypt-key-if-used>"
+      "EncryptKey": "<encrypt-key-if-used>",
+      // When true (default), Gateway adds/removes a Feishu Typing reaction on the inbound message
+      // while the agent turn is running (thinking icon).
+      "TypingIndicator": true
     }
   }
 }
@@ -35,6 +38,15 @@ Environment variables:
 - `OPENCLAW_FEISHU_APP_ID`
 - `OPENCLAW_FEISHU_APP_SECRET`
 - `OPENCLAW_FEISHU_VERIFICATION_TOKEN`
+
+#### Typing indicator (thinking icon)
+
+When `TypingIndicator` is enabled, Gateway typing start/stop hooks call Feishu reaction APIs on the inbound `message_id`:
+
+1. Start → `POST /im/v1/messages/{message_id}/reactions` with `emoji_type: Typing`
+2. Stop / restart / dispose → `DELETE /im/v1/messages/{message_id}/reactions/{reaction_id}`
+
+Requires the inbound message id; without it the hook is a no-op. Failures are logged and swallowed so typing never breaks the agent turn.
 
 ### DingTalk
 

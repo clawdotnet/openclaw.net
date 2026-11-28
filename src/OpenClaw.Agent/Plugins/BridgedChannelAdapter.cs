@@ -144,7 +144,12 @@ public sealed class BridgedChannelAdapter : IBridgedChannelControl, IRestartable
     /// <summary>
     /// Sends a typing indicator through the bridge channel.
     /// </summary>
-    public async ValueTask SendTypingAsync(string recipientId, bool isTyping, string? accountId, CancellationToken ct)
+    public async ValueTask SendTypingAsync(
+        string recipientId,
+        bool isTyping,
+        string? accountId,
+        string? messageId,
+        CancellationToken ct)
     {
         try
         {
@@ -156,6 +161,7 @@ public sealed class BridgedChannelAdapter : IBridgedChannelControl, IRestartable
                     RecipientId = recipientId,
                     AccountId = accountId,
                     IsTyping = isTyping,
+                    MessageId = messageId,
                 },
                 CoreJsonContext.Default.BridgeChannelTypingRequest,
                 ct);

@@ -787,7 +787,12 @@ internal sealed class GatewayInboundMessageWorker
                                             "bridged read receipt");
                                     }
                                     ObserveBackgroundTask(
-                                        bridgedAdapter.SendTypingAsync(conversationRecipientId, true, msg.AccountId, processingCt).AsTask(),
+                                        bridgedAdapter.SendTypingAsync(
+                                            conversationRecipientId,
+                                            true,
+                                            msg.AccountId,
+                                            msg.MessageId,
+                                            processingCt).AsTask(),
                                         logger,
                                         "bridged typing start");
                                     bridgedTypingStarted = true;
@@ -1143,7 +1148,12 @@ internal sealed class GatewayInboundMessageWorker
                             {
                                 try
                                 {
-                                    await bridgedAdapter.SendTypingAsync(conversationRecipientId, false, msg.AccountId, CancellationToken.None);
+                                    await bridgedAdapter.SendTypingAsync(
+                                        conversationRecipientId,
+                                        false,
+                                        msg.AccountId,
+                                        msg.MessageId,
+                                        CancellationToken.None);
                                 }
                                 catch (Exception ex)
                                 {

@@ -926,10 +926,12 @@ async function handleRequest(req) {
       const recipientId = getParam(req.params, "recipientId");
       const accountId = req.params?.accountId ?? null;
       const isTyping = req.params?.isTyping ?? true;
+      // Inbound message id for channels that react on a message (e.g. Feishu).
+      const messageId = req.params?.messageId ?? null;
       const ch = registeredChannels.get(channelId);
       if (!ch) throw new Error(`Unknown channel: ${channelId}`);
       if (typeof ch.typing === "function") {
-        await ch.typing({ channelId, recipientId, accountId, isTyping });
+        await ch.typing({ channelId, recipientId, accountId, isTyping, messageId });
       }
       return { ok: true };
     }

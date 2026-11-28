@@ -1084,6 +1084,9 @@ public sealed class BridgeChannelTypingRequest
     public required string RecipientId { get; init; }
     public string? AccountId { get; init; }
     public bool IsTyping { get; init; } = true;
+
+    /// <summary>Inbound message id when the channel needs it (e.g. Feishu Typing reaction).</summary>
+    public string? MessageId { get; init; }
 }
 
 /// <summary>

@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -18,8 +19,9 @@ namespace OpenClaw.Channels;
 /// Uses WebSocket long connection to receive events and REST API to send messages.
 /// Supports text, image, file, audio, and video.
 /// Config hot-reload: change Feishu values in appsettings and the channel reconnects automatically.
+/// Implements <see cref="IBridgedChannelControl"/> so Gateway can drive Typing reactions.
 /// </summary>
-public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
+public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter, IBridgedChannelControl
 {
     private const string FeishuBase = "https://open.feishu.cn/open-apis";
 
@@ -59,6 +61,10 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
     // Protects against Feishu event retries and replays after WebSocket reconnects / restarts.
     private readonly FeishuMessageDedup _dedup = new();
 
+    // message_id → reaction_id for Typing indicator cleanup.
+    private readonly ConcurrentDictionary<string, string> _typingReactionIds =
+        new(StringComparer.Ordinal);
+
     public FeishuChannel(
         FeishuChannelConfig initialConfig,
         ILogger<FeishuChannel> logger) : this(initialConfig, logger, null)
@@ -73,6 +79,14 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
     }
 
     public string ChannelId => "feishu";
+
+    /// <inheritdoc />
+    public string? SelfId => _botOpenId;
+
+    /// <inheritdoc />
+    public IReadOnlyList<string> SelfIds =>
+        string.IsNullOrWhiteSpace(_botOpenId) ? [] : [_botOpenId];
+
     public event Func<InboundMessage, CancellationToken, ValueTask>? OnMessageReceived;
 
     /// <summary>
@@ -133,6 +147,9 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
         await _restartLock.WaitAsync(ct);
         try
         {
+            // Drop Typing reactions while the old token is still usable.
+            await ClearTypingReactionsAsync(ct).ConfigureAwait(false);
+
             // Cancel and await the old loop
             if (_cts is not null)
             {
@@ -1099,6 +1116,163 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
         await ChannelDeliveryHttp.RequireZeroCodeAsync(resp, "code", ct);
     }
 
+    // ──────────────────────────── Typing reaction ─────────────────────────────
+
+    /// <inheritdoc />
+    public async ValueTask SendTypingAsync(
+        string recipientId,
+        bool isTyping,
+        string? accountId,
+        string? messageId,
+        CancellationToken ct)
+    {
+        _ = recipientId;
+        _ = accountId;
+
+        if (string.IsNullOrWhiteSpace(messageId))
+            return;
+
+        if (!GetEffectiveConfig().TypingIndicator)
+            return;
+
+        await SetTypingReactionAsync(messageId, isTyping, ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>Feishu bots have no WhatsApp-style inbound read receipt API; no-op.</remarks>
+    public ValueTask SendReadReceiptAsync(
+        string messageId,
+        string? remoteJid,
+        string? participant,
+        string? accountId,
+        CancellationToken ct)
+    {
+        _ = messageId;
+        _ = remoteJid;
+        _ = participant;
+        _ = accountId;
+        _ = ct;
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// Adds or removes Feishu <c>Typing</c> reaction on an inbound message (thinking icon).
+    /// Failures are logged and swallowed — typing must not break the agent turn.
+    /// </summary>
+    internal async Task SetTypingReactionAsync(string messageId, bool isTyping, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(messageId))
+            return;
+
+        try
+        {
+            await RefreshAppTokenAsync(ct).ConfigureAwait(false);
+
+            if (isTyping)
+                await AddTypingReactionAsync(messageId, ct).ConfigureAwait(false);
+            else
+                await RemoveTypingReactionAsync(messageId, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(
+                ex,
+                "Feishu typing reaction {Action} failed for message {MessageId}.",
+                isTyping ? "add" : "remove",
+                messageId);
+        }
+    }
+
+    private async Task AddTypingReactionAsync(string messageId, CancellationToken ct)
+    {
+        using var req = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{FeishuBase}/im/v1/messages/{Uri.EscapeDataString(messageId)}/reactions");
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _appAccessToken);
+        req.Content = new StringContent(
+            "{\"reaction_type\":{\"emoji_type\":\"Typing\"}}",
+            Encoding.UTF8,
+            "application/json");
+
+        using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+        var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode)
+        {
+            _logger.LogDebug(
+                "Feishu typing reaction create HTTP {Status}: {Body}",
+                (int)resp.StatusCode,
+                body);
+            return;
+        }
+
+        using var doc = JsonDocument.Parse(body);
+        var root = doc.RootElement;
+        if (root.TryGetProperty("code", out var code) && code.GetInt32() != 0)
+        {
+            _logger.LogDebug("Feishu typing reaction create code={Code}: {Body}", code.GetInt32(), body);
+            return;
+        }
+
+        if (root.TryGetProperty("data", out var data) &&
+            data.TryGetProperty("reaction_id", out var reactionIdEl))
+        {
+            var reactionId = reactionIdEl.GetString();
+            if (!string.IsNullOrWhiteSpace(reactionId))
+                _typingReactionIds[messageId] = reactionId;
+        }
+    }
+
+    private async Task RemoveTypingReactionAsync(string messageId, CancellationToken ct)
+    {
+        if (!_typingReactionIds.TryRemove(messageId, out var reactionId) ||
+            string.IsNullOrWhiteSpace(reactionId))
+            return;
+
+        using var req = new HttpRequestMessage(
+            HttpMethod.Delete,
+            $"{FeishuBase}/im/v1/messages/{Uri.EscapeDataString(messageId)}/reactions/{Uri.EscapeDataString(reactionId)}");
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _appAccessToken);
+
+        using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode)
+        {
+            var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            _logger.LogDebug(
+                "Feishu typing reaction delete HTTP {Status}: {Body}",
+                (int)resp.StatusCode,
+                body);
+        }
+    }
+
+    /// <summary>
+    /// Best-effort remove outstanding Typing reactions before restart/dispose (avoid orphan icons).
+    /// </summary>
+    private async Task ClearTypingReactionsAsync(CancellationToken ct)
+    {
+        if (_typingReactionIds.IsEmpty)
+            return;
+
+        try
+        {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
+            var token = timeoutCts.Token;
+
+            await RefreshAppTokenAsync(token).ConfigureAwait(false);
+
+            foreach (var messageId in _typingReactionIds.Keys.ToArray())
+                await RemoveTypingReactionAsync(messageId, token).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Feishu clear typing reactions best-effort failed.");
+        }
+        finally
+        {
+            _typingReactionIds.Clear();
+        }
+    }
+
     // ──────────────────────────── Media upload ────────────────────────────────
 
     private async Task<string?> UploadImageAsync(byte[] data, CancellationToken ct)
@@ -1630,8 +1804,10 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
 
     public async ValueTask DisposeAsync()
     {
-        _dedup.Dispose();
+        // Clear orphan Typing icons while the HTTP client / token are still usable.
+        await ClearTypingReactionsAsync(CancellationToken.None).ConfigureAwait(false);
 
+        _dedup.Dispose();
 
         if (_cts is not null)
         {
