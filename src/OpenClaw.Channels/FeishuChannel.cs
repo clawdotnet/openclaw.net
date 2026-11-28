@@ -14,21 +14,177 @@ using OpenClaw.Core.Security;
 namespace OpenClaw.Channels;
 
 /// <summary>
-/// Feishu (Lark) channel adapter.
-/// Uses WebSocket long connection to receive events and REST API to send messages.
-/// Supports text, image, file, audio, and video.
-/// Config hot-reload: change Feishu values in appsettings and the channel reconnects automatically.
+/// Feishu (Lark) multi-account channel facade.
+/// Projects <c>Accounts</c> into N× <see cref="FeishuClient"/>; <c>ChannelId</c> remains <c>feishu</c>.
 /// </summary>
 public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
 {
+    private readonly FeishuChannelConfig _initialConfig;
+    private readonly ILoggerFactory _loggerFactory;
+    private readonly ILogger<FeishuChannel> _logger;
+    private readonly SemaphoreSlim _rebuildLock = new(1, 1);
+
+    private volatile FeishuChannelConfig? _runtimeOverride;
+    private Dictionary<string, FeishuClient> _children = new(StringComparer.OrdinalIgnoreCase);
+    private CancellationToken _appLifetime = CancellationToken.None;
+
+    /// <summary>Construct multi-account facade.</summary>
+    public FeishuChannel(
+        FeishuChannelConfig initialConfig,
+        ILoggerFactory loggerFactory)
+    {
+        _initialConfig = initialConfig ?? throw new ArgumentNullException(nameof(initialConfig));
+        _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+        _logger = loggerFactory.CreateLogger<FeishuChannel>();
+    }
+
+    /// <inheritdoc />
+    public string ChannelId => "feishu";
+
+    /// <inheritdoc />
+    public event Func<InboundMessage, CancellationToken, ValueTask>? OnMessageReceived;
+
+    /// <summary>Effective root config (includes Accounts map).</summary>
+    public FeishuChannelConfig GetEffectiveConfig() => _runtimeOverride ?? _initialConfig;
+
+    /// <summary>Admin read surface.</summary>
+    public FeishuChannelConfig GetEffectiveConfigForAdmin() => GetEffectiveConfig();
+
+    /// <summary>In-memory override; pass <c>null</c> to revert to appsettings.</summary>
+    public void SetRuntimeConfig(FeishuChannelConfig? cfg) => _runtimeOverride = cfg;
+
+    /// <summary>Override config and rebuild child clients.</summary>
+    public async Task UpdateConfigAsync(FeishuChannelConfig newConfig, CancellationToken ct = default)
+    {
+        SetRuntimeConfig(newConfig);
+        _logger.LogInformation("Feishu multi-account runtime config updated — rebuilding children.");
+        await RestartAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public Task StartAsync(CancellationToken ct)
+    {
+        _appLifetime = ct;
+        return RebuildAndStartChildrenAsync(ct);
+    }
+
+    /// <inheritdoc />
+    public async Task RestartAsync(CancellationToken ct)
+    {
+        await _rebuildLock.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await DisposeChildrenAsync().ConfigureAwait(false);
+            await RebuildAndStartChildrenAsync(_appLifetime.CanBeCanceled ? _appLifetime : ct).ConfigureAwait(false);
+            _logger.LogInformation(
+                "Feishu multi-account channel restarted with {Count} client(s).",
+                _children.Count);
+        }
+        finally
+        {
+            _rebuildLock.Release();
+        }
+    }
+
+    /// <inheritdoc />
+    public async ValueTask SendAsync(OutboundMessage message, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+
+        var root = GetEffectiveConfig();
+        var accountId = FeishuAccountProjection.ResolveOutboundAccountId(root, message.AccountId);
+
+        if (!_children.TryGetValue(accountId, out var child))
+        {
+            throw new ChannelDeliveryException(
+                $"Feishu account '{accountId}' is not available.",
+                canRetry: false);
+        }
+
+        var outbound = string.IsNullOrWhiteSpace(message.AccountId)
+            ? message with { AccountId = accountId }
+            : message;
+
+        await child.SendAsync(outbound, ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask DisposeAsync()
+    {
+        await DisposeChildrenAsync().ConfigureAwait(false);
+        _rebuildLock.Dispose();
+    }
+
+    private async Task RebuildAndStartChildrenAsync(CancellationToken ct)
+    {
+        var root = GetEffectiveConfig();
+        var next = new Dictionary<string, FeishuClient>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var accountId in FeishuAccountProjection.ListAccountIds(root))
+        {
+            var projected = FeishuAccountProjection.Project(root, accountId);
+            var child = new FeishuClient(
+                accountId,
+                projected,
+                _loggerFactory.CreateLogger<FeishuClient>());
+
+            child.OnMessageReceived += ForwardInboundAsync;
+            next[accountId] = child;
+        }
+
+        _children = next;
+
+        foreach (var (accountId, child) in _children)
+        {
+            _logger.LogInformation("Starting Feishu client account '{AccountId}'.", accountId);
+            await child.StartAsync(ct).ConfigureAwait(false);
+        }
+    }
+
+    private async ValueTask ForwardInboundAsync(InboundMessage message, CancellationToken ct)
+    {
+        var handler = OnMessageReceived;
+        if (handler is not null)
+            await handler(message, ct).ConfigureAwait(false);
+    }
+
+    private async Task DisposeChildrenAsync()
+    {
+        var snapshot = _children;
+        _children = new Dictionary<string, FeishuClient>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var child in snapshot.Values)
+        {
+            try
+            {
+                await child.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Feishu child client dispose raised.");
+            }
+        }
+    }
+}
+
+/// <summary>
+/// Feishu (Lark) single-bot client (WebSocket + REST).
+/// Supports text, image, file, audio, and video.
+/// Config hot-reload reconnects this client; multi-account routing lives on <see cref="FeishuChannel"/>.
+/// Construct with <c>accountId</c>; facade holds N instances.
+/// </summary>
+public sealed class FeishuClient : IChannelAdapter, IRestartableChannelAdapter
+{
     private const string FeishuBase = "https://open.feishu.cn/open-apis";
+    private const string ChannelIdValue = "feishu";
+    private readonly string _accountId;
 
     // Client-side heartbeat interval — Feishu server expects periodic pings
     private const int HeartbeatIntervalMs = 120_000;
 
     private readonly FeishuChannelConfig _initialConfig;
     private readonly HttpClient _http;
-    private readonly ILogger<FeishuChannel> _logger;
+    private readonly ILogger<FeishuClient> _logger;
     private readonly SemaphoreSlim _restartLock = new(1, 1);
 
     // In-memory override applied via UpdateConfigAsync (takes precedence over initial config)
@@ -59,20 +215,54 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
     // Protects against Feishu event retries and replays after WebSocket reconnects / restarts.
     private readonly FeishuMessageDedup _dedup = new();
 
-    public FeishuChannel(
+    /// <summary>Account id used for facade routing and inbound stamping.</summary>
+    public string AccountId => _accountId;
+
+    public string ChannelId => ChannelIdValue;
+
+    public FeishuClient(
         FeishuChannelConfig initialConfig,
-        ILogger<FeishuChannel> logger) : this(initialConfig, logger, null)
+        ILogger<FeishuClient> logger) : this(
+            FeishuAccountCredentialRefs.DefaultAccountId,
+            initialConfig,
+            logger,
+            null)
     {
     }
 
-    internal FeishuChannel(FeishuChannelConfig initialConfig, ILogger<FeishuChannel> logger, HttpClient? http)
+    /// <summary>Test constructor that accepts an injected HttpClient.</summary>
+    internal FeishuClient(
+        FeishuChannelConfig initialConfig,
+        ILogger<FeishuClient> logger,
+        HttpClient? http) : this(
+            FeishuAccountCredentialRefs.DefaultAccountId,
+            initialConfig,
+            logger,
+            http)
     {
-        _initialConfig = initialConfig;
-        _logger = logger;
+    }
+
+    /// <summary>Construct a client for a specific account id (used by the multi-account facade).</summary>
+    public FeishuClient(
+        string accountId,
+        FeishuChannelConfig initialConfig,
+        ILogger<FeishuClient> logger) : this(accountId, initialConfig, logger, null)
+    {
+    }
+
+    internal FeishuClient(
+        string accountId,
+        FeishuChannelConfig initialConfig,
+        ILogger<FeishuClient> logger,
+        HttpClient? http)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(accountId);
+        _accountId = accountId.Trim();
+        _initialConfig = initialConfig ?? throw new ArgumentNullException(nameof(initialConfig));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _http = http ?? HttpClientFactory.Create();
     }
 
-    public string ChannelId => "feishu";
     public event Func<InboundMessage, CancellationToken, ValueTask>? OnMessageReceived;
 
     /// <summary>
@@ -581,7 +771,8 @@ public sealed class FeishuChannel : IChannelAdapter, IRestartableChannelAdapter
 
         var inbound = new InboundMessage
         {
-            ChannelId = ChannelId,
+            ChannelId = ChannelIdValue,
+            AccountId = _accountId,
             SenderId = openId,
             SenderName = senderName,
             Text = text ?? string.Empty,

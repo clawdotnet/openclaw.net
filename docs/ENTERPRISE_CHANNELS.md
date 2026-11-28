@@ -36,6 +36,31 @@ Environment variables:
 - `OPENCLAW_FEISHU_APP_SECRET`
 - `OPENCLAW_FEISHU_VERIFICATION_TOKEN`
 
+#### Multi-account (`Accounts` map)
+
+Feishu supports the official account map. `ChannelId` remains `feishu`; inbound/outbound messages carry `AccountId`.
+
+```json
+"Feishu": {
+  "Enabled": true,
+  "AppIdRef": "env:FEISHU_APP_ID",
+  "AppSecretRef": "env:FEISHU_APP_SECRET",
+  "GroupPolicy": "open",
+  "Accounts": {
+    "default": {},
+    "team-bot": {
+      "AppIdRef": "env:FEISHU_APP_ID_team-bot",
+      "AppSecretRef": "env:FEISHU_APP_SECRET_team-bot"
+    }
+  }
+}
+```
+
+- `"default": {}` reuses the root AppId/AppSecret/refs.
+- Other keys default to `env:FEISHU_APP_ID_{key}` / `env:FEISHU_APP_SECRET_{key}` (key kept as-is, including hyphens).
+- An empty `Accounts` map starts only `default` (single-bot root config).
+- Runtime composition uses `FeishuChannel` as a multi-account facade over N× `FeishuClient`.
+
 ### DingTalk
 
 ```jsonc

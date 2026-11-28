@@ -362,8 +362,9 @@ public sealed partial class GatewayAdminEndpointTests
             AppId = "fixture-app",
             AppSecretRef = "raw:synthetic-secret"
         };
-        await using var channel = new OpenClaw.Channels.FeishuChannel(config,
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<OpenClaw.Channels.FeishuChannel>.Instance);
+        await using var channel = new OpenClaw.Channels.FeishuChannel(
+            config,
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
         using var stopped = new CancellationTokenSource();
         stopped.Cancel();
         await channel.StartAsync(stopped.Token);

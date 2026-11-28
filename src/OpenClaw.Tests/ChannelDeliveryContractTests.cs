@@ -375,7 +375,7 @@ public sealed class ChannelDeliveryContractTests
             "slack" => new SlackChannel(new SlackChannelConfig { BotToken = "fixture" }, NullLogger<SlackChannel>.Instance, http),
             "discord" => new DiscordChannel(new DiscordChannelConfig { BotToken = "fixture" }, NullLogger<DiscordChannel>.Instance, http),
             "teams" => new TeamsChannel(new TeamsChannelConfig { AppId = "fixture", AppPassword = "fixture", TenantId = "fixture", TextChunkLimit = 2000 }, http, NullLogger<TeamsChannel>.Instance),
-            "feishu" => new FeishuChannel(new FeishuChannelConfig(), NullLogger<FeishuChannel>.Instance, http),
+            "feishu" => new FeishuClient(new FeishuChannelConfig(), NullLogger<FeishuClient>.Instance, http),
             "dingtalk" => new DingTalkChannel(new DingTalkChannelConfig(), NullLogger<DingTalkChannel>.Instance, http),
             "wecom" => new WeComChannel(new WeComChannelConfig(), NullLogger<WeComChannel>.Instance, http),
             "whatsapp" => new WhatsAppChannel(new WhatsAppChannelConfig { PhoneNumberId = "fixture", CloudApiToken = "fixture" }, http, NullLogger<WhatsAppChannel>.Instance),

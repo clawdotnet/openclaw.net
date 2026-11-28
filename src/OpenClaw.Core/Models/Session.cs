@@ -1749,6 +1749,7 @@ public sealed class SessionDelegationChildSummary
 [JsonSerializable(typeof(DiscordChannelConfig))]
 [JsonSerializable(typeof(SignalChannelConfig))]
 [JsonSerializable(typeof(FeishuChannelConfig))]
+[JsonSerializable(typeof(Dictionary<string, FeishuChannelConfig>))]
 [JsonSerializable(typeof(DingTalkChannelConfig))]
 [JsonSerializable(typeof(WeComChannelConfig))]
 [JsonSerializable(typeof(RoutingConfig))]

@@ -49,6 +49,12 @@ public sealed class FeishuChannelConfig
     /// The pipeline can pass these to tools that understand the scheme.
     /// </summary>
     public bool ExposeInboundMediaUrls { get; set; } = true;
+
+    /// <summary>
+    /// Multi-bot account map (aligned with official <c>channels.feishu.accounts</c>; key = AccountId).
+    /// <c>"default": {}</c> means use the root fields as the primary account.
+    /// </summary>
+    public Dictionary<string, FeishuChannelConfig> Accounts { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class DingTalkChannelConfig
