@@ -49,6 +49,12 @@ public sealed class FeishuChannelConfig
     /// The pipeline can pass these to tools that understand the scheme.
     /// </summary>
     public bool ExposeInboundMediaUrls { get; set; } = true;
+
+    /// <summary>
+    /// When true, Gateway typing hooks add/remove a Feishu <c>Typing</c> reaction on the inbound message
+    /// (thinking icon). Aligns with official OpenClaw <c>typingIndicator</c>.
+    /// </summary>
+    public bool TypingIndicator { get; set; } = true;
 }
 
 public sealed class DingTalkChannelConfig

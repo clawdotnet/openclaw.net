@@ -1381,7 +1381,7 @@ public sealed class PluginBridgeIntegrationTests : IDisposable
             ReplyToMessageId = "msg-1",
             Subject = "subject"
         }, TestContext.Current.CancellationToken);
-        await adapter.SendTypingAsync("group-1@wa", true, "acc-1", TestContext.Current.CancellationToken);
+        await adapter.SendTypingAsync("group-1@wa", true, "acc-1", messageId: null, TestContext.Current.CancellationToken);
         await adapter.SendReadReceiptAsync("msg-1", "group-1@wa", "sender@wa", "acc-1", TestContext.Current.CancellationToken);
         await adapter.SendReactionAsync("msg-1", "👍", "group-1@wa", "sender@wa", "acc-1", TestContext.Current.CancellationToken);
 

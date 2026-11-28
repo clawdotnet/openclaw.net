@@ -1917,8 +1917,14 @@ public sealed class GatewayWorkersTests
         public ValueTask SendAsync(OutboundMessage message, CancellationToken ct)
             => _messages.Writer.WriteAsync(message, ct);
 
-        public ValueTask SendTypingAsync(string recipientId, bool isTyping, string? accountId, CancellationToken ct)
+        public ValueTask SendTypingAsync(
+            string recipientId,
+            bool isTyping,
+            string? accountId,
+            string? messageId,
+            CancellationToken ct)
         {
+            _ = messageId;
             TypingEvents.Add((recipientId, accountId, isTyping));
             return ValueTask.CompletedTask;
         }
